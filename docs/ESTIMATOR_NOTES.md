@@ -28,3 +28,12 @@
    remnant correlation, and the direct lobe had to be excluded. Reverted to
    the legacy peak-relative logic (masked by `skip`), which is stable once
    the denoiser is NaN-safe.
+5. **Legacy LMS divergence depends on the filter input (reference), not the
+   measurement.** In the baseline call pattern (`x` = reference pulse,
+   `d` = measurement, `mu=0.01`, scalar weight) the update is
+   `w <-- w*(1 - mu*x^2) + mu*x*d`: a homogeneous coefficient
+   `1 - mu*x^2` with a bounded driving term `mu*x*d`. Stability therefore
+   requires `mu*x^2 < 2`, independent of the amplitude of `d`. Measurement
+   amplitude cannot make it diverge; only the amplitude of the reference
+   (the filter input `x`) can. Mitigation is on the reference side, e.g.
+   normalizing the reference gain.
