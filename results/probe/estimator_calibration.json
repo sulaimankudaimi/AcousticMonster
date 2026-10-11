@@ -1,0 +1,30 @@
+{
+  "definition": "delay measured relative to the direct-pulse reference (echo = pulse at positive lag); noise-free measurement; echoes >= 5% of incident",
+  "n_samples": 463,
+  "estimators": {
+    "delay_xcorr": {
+      "bias_samples": -0.016336298926056272,
+      "median_abs_err_samples": 0.23684049366664084,
+      "rmse_samples": 0.2806440061244679,
+      "bias_metres": -0.00455097798899867,
+      "rmse_metres": 0.07894352644789757,
+      "fraction_recovered_1samp": 1.0
+    },
+    "delay_gcc_phat": {
+      "bias_samples": -0.010278777887791916,
+      "median_abs_err_samples": 0.2358190125283386,
+      "rmse_samples": 0.2802672480184174,
+      "bias_metres": -0.0028464505314579384,
+      "rmse_metres": 0.07883883213679696,
+      "fraction_recovered_1samp": 1.0
+    },
+    "delay_pipeline": {
+      "bias_samples": -0.23703415262370958,
+      "median_abs_err_samples": 0.27337913319325935,
+      "rmse_samples": 0.3817525116917949,
+      "bias_metres": -0.06655847299641497,
+      "rmse_metres": 0.1072430174374769,
+      "fraction_recovered_1samp": 1.0
+    }
+  }
+}
