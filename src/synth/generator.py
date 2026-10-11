@@ -98,7 +98,12 @@ def _unit_noise(rng: Any, n: int = N, fs: float = FS, impulsive: bool = False) -
     return noise
 
 
-def build_sample(rng: Any, shift: bool = False, snr_db: Optional[float] = None) -> Dict[str, Any]:
+def build_sample(
+    rng: Any,
+    shift: bool = False,
+    snr_db: Optional[float] = None,
+    echo_snr_db: Optional[float] = None,
+) -> Dict[str, Any]:
     """Generate one pulse-echo measurement and all its targets/metadata.
 
     SNR definition (documented in ``data/DATA_CARD.md``): ``snr_db`` is
@@ -106,8 +111,14 @@ def build_sample(rng: Any, shift: bool = False, snr_db: Optional[float] = None) 
     ``10*log10(mean(clean**2)/mean(noise**2))`` with ``clean = pulse + echo``.
     A second quantity, ``echo_snr_db``, reports the same noise against the
     echo alone: ``10*log10(mean(echo**2)/mean(noise**2))``. Both are stored
-    in ``meta``. If ``snr_db`` is given it overrides the draw (fixed-SNR
-    experiments, e.g. E3).
+    in ``meta``.
+
+    If ``snr_db`` is given it overrides the draw (fixed-total-SNR
+    experiments, e.g. E3). If ``echo_snr_db`` is given it fixes the
+    echo-referenced SNR instead, applied as an exact final rescale of the
+    noise; the two overrides are mutually exclusive. When ``echo_snr_db`` is
+    used, ``meta["snr_db"]`` holds the *achieved total SNR*, i.e. the
+    mapping echo-snr -> total-snr for that sample.
     """
     r = SHIFT if shift else BASE
     T = float(rng.uniform(*r["T"]))
@@ -116,7 +127,10 @@ def build_sample(rng: Any, shift: bool = False, snr_db: Optional[float] = None) 
     x_b = float(rng.uniform(*r["x_b"]))
     s = float(rng.uniform(*r["s"]))
     alpha = float(_log_uniform(rng, *r["alpha"]))
+    if snr_db is not None and echo_snr_db is not None:
+        raise ValueError("snr_db and echo_snr_db overrides are mutually exclusive")
     snr_db = float(rng.uniform(*r["snr_db"])) if snr_db is None else float(snr_db)
+    echo_snr_db = None if echo_snr_db is None else float(echo_snr_db)
     scale = float(_log_uniform(rng, *r["scale"]))
     f0 = float(rng.uniform(*r["f0"]))
 
@@ -131,31 +145,45 @@ def build_sample(rng: Any, shift: bool = False, snr_db: Optional[float] = None) 
     clean = pulse + echo
 
     noise = _unit_noise(rng)  # background, bursts added post-scaling for shift
-    # scale noise to the requested SNR: 10*log10(||clean||^2 / ||noise||^2) = snr_db
-    target_std = np.sqrt(np.mean(clean ** 2)) / np.sqrt(10.0 ** (snr_db / 10.0))
+    if echo_snr_db is not None:
+        # provisional background scale from the echo power, bursts 3x that
+        target_std = np.sqrt(np.mean(echo ** 2)) / np.sqrt(10.0 ** (echo_snr_db / 10.0))
+    else:
+        # scale noise to the requested total SNR
+        target_std = np.sqrt(np.mean(clean ** 2)) / np.sqrt(10.0 ** (snr_db / 10.0))
     noise = noise * target_std
 
     if shift:  # impulsive bursts on top of the scaled background
         bursts = _unit_noise(rng, impulsive=True) * target_std * 3.0
         noise = noise + bursts
 
-    echo_snr_db = 10.0 * np.log10(
+    echo_override = echo_snr_db is not None
+    if echo_override:
+        # exact final rescale so the ECHO-referenced SNR hits the request
+        echo_var = np.mean(echo ** 2) + 1e-30
+        noise = noise * np.sqrt(echo_var / (10.0 ** (echo_snr_db / 10.0)) / (np.mean(noise ** 2) + 1e-30))
+
+    echo_snr_achieved = 10.0 * np.log10(
         (np.mean(echo ** 2) + 1e-30) / (np.mean(noise ** 2) + 1e-30)
     )
+    snr_db_achieved = 10.0 * np.log10(
+        (np.mean(clean ** 2) + 1e-30) / (np.mean(noise ** 2) + 1e-30)
+    )
+    snr_db_eff = float(snr_db_achieved) if echo_override else float(snr_db)
     signal = scale * (clean + noise)
 
     y = np.array(
         [
             s,
             x_b / 60.0,
-            np.clip((snr_db + 5.0) / 35.0, 0.0, 1.0),
+            np.clip((snr_db_eff + 5.0) / 35.0, 0.0, 1.0),
         ]
     )
     env = np.array([T / 60.0, P / 100.0, v / 3.0])
     meta = {
         "T": T, "P": P, "v": v, "c": c, "x_b": x_b, "s": s,
-        "R": R, "alpha": alpha, "snr_db": snr_db, "scale": scale, "f0": f0,
-        "echo_snr_db": float(echo_snr_db),
+        "R": R, "alpha": alpha, "snr_db": snr_db_eff, "scale": scale, "f0": f0,
+        "echo_snr_db": float(echo_snr_achieved),
     }
     return {
         "pulse": pulse,
@@ -170,7 +198,12 @@ def build_sample(rng: Any, shift: bool = False, snr_db: Optional[float] = None) 
 
 
 def build_split(
-    key: str, n: int, seed: int, shift: bool = False, snr_db: Optional[float] = None
+    key: str,
+    n: int,
+    seed: int,
+    shift: bool = False,
+    snr_db: Optional[float] = None,
+    echo_snr_db: Optional[float] = None,
 ) -> Dict[str, np.ndarray]:
     """Build a complete split of ``n`` deterministic samples (seeded).
 
@@ -178,7 +211,10 @@ def build_split(
     ``X (n, N, 1) float32``, ``env (n, 3) float32``, ``y (n, 3) float32``
     and per-parameter metadata arrays ``(n,) float64`` for
     ``T, P, v, c, x_b, s, R, alpha, snr_db, scale, f0, echo_snr_db``.
-    ``snr_db`` (optional) fixes the SNR for every sample (Experiment E3).
+    ``snr_db`` (optional) fixes the total SNR; ``echo_snr_db`` (optional)
+    fixes the echo-referenced SNR instead (mutually exclusive). When
+    ``echo_snr_db`` is set, the ``snr_db`` column holds the achieved total
+    SNR, i.e. the echo-snr -> total-snr mapping for each sample (E3).
     """
     rng = np.random.RandomState(seed)
     keys = ["T", "P", "v", "c", "x_b", "s", "R", "alpha", "snr_db", "scale", "f0", "echo_snr_db"]
@@ -187,7 +223,7 @@ def build_split(
     env = np.empty((n, 3), dtype=np.float32)
     y = np.empty((n, 3), dtype=np.float32)
     for i in range(n):
-        s = build_sample(rng, shift=shift, snr_db=snr_db)
+        s = build_sample(rng, shift=shift, snr_db=snr_db, echo_snr_db=echo_snr_db)
         X[i, :, 0] = s["x"]
         env[i, :] = s["env"]
         y[i, :] = s["y"]

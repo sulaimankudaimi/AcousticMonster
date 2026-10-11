@@ -20,9 +20,14 @@
   against the echo component alone. Both use the exact numerically-scaled
   `noise` array stored in the sample. `y[2]` (auxiliary signal-quality target)
   is clipped from `snr_db` only.
-- `build_sample(..., snr_db=float)` accepts a fixed-SNR override (used by
+- `build_sample(..., snr_db=float)` accepts a fixed-*total*-SNR override (used by
   fixed-SNR experiments, e.g. E3); `build_split(..., snr_db=...)` propagates
   it to an entire split.
+- `build_sample(..., echo_snr_db=float)` fixes the *echo-referenced* SNR instead:
+  mutually exclusive with `snr_db`, applied as an exact final rescale of the
+  stored noise array (nominal/echo axis, primary for E3). When set, the stored
+  `snr_db` metadata column holds the achieved *total* SNR — the
+  echo-snr -> total-snr mapping for that sample.
 - Global multiplicative amplitude `scale ~ logU(0.1, 1000)` applied to the whole
   measurement to expose scale sensitivity.
 

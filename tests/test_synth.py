@@ -127,6 +127,27 @@ def test_echo_snr_db_definition():
         assert m["echo_snr_db"] == pytest.approx(expected, abs=1e-6)
 
 
+def test_echo_snr_db_override_exact_and_mapping_stored():
+    split = build_split("val", 30, seed=9, echo_snr_db=3.0)
+    # exact echo-referenced SNR on the stored noise
+    assert np.all(split["echo_snr_db"] == pytest.approx(3.0, abs=1e-6))
+    # the mapping: snr_db column holds the achieved total SNR
+    rng = np.random.RandomState(9)
+    first = g.build_sample(rng, shift=False, echo_snr_db=3.0)
+    assert split["snr_db"][0] == pytest.approx(first["meta"]["snr_db"], rel=1e-9)
+    assert split["snr_db"][0] == pytest.approx(
+        10.0 * np.log10((np.mean(first["clean"] ** 2) + 1e-30) / (np.mean(first["noise"] ** 2) + 1e-30)),
+        abs=1e-6,
+    )
+
+
+def test_snr_overrides_mutually_exclusive():
+    with pytest.raises(ValueError):
+        g.build_sample(np.random.RandomState(0), snr_db=10.0, echo_snr_db=10.0)
+    with pytest.raises(ValueError):
+        build_split("val", 2, seed=1, snr_db=10.0, echo_snr_db=10.0)
+
+
 def test_echo_always_inside_window():
     rng = np.random.RandomState(15)
     for _ in range(100):
