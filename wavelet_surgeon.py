@@ -8,6 +8,18 @@ import numpy as np
 import pywt
 
 
+def _soft_threshold(c, value):
+    """Soft-threshold without ``0/0``: ``sign(c)*max(|c|-value, 0)``.
+
+    ``pywt.threshold(mode="soft")`` computes ``(1 - value/magnitude)*c``,
+    which yields NaN for exactly-zero detail coefficients (typical of
+    smooth/noise-free regions), corrupting the reconstructed signal.
+    """
+    c = np.asarray(c, dtype=np.float64)
+    mag = np.abs(c)
+    return np.sign(c) * np.maximum(mag - value, 0.0)
+
+
 def apply_wavelet_denoising(signal, wavelet="db4", level=2):
     """Soft-threshold wavelet denoising of a 1-D signal.
 
@@ -22,7 +34,7 @@ def apply_wavelet_denoising(signal, wavelet="db4", level=2):
     fine = coeffs[-level]
     sigma = (1 / 0.6745) * np.median(np.abs(fine - np.median(fine)))
     uthresh = sigma * np.sqrt(2 * np.log(len(signal)))
-    coeffs[1:] = [pywt.threshold(c, value=uthresh, mode="soft") for c in coeffs[1:]]
+    coeffs[1:] = [_soft_threshold(c, value=uthresh) for c in coeffs[1:]]
     return pywt.waverec(coeffs, wavelet, mode="per")
 
 

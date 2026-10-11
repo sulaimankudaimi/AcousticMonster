@@ -124,29 +124,97 @@ def denoise_wavelet(signal, wavelet="db4", level=2):
     return apply_wavelet_denoising(signal, wavelet=wavelet, level=level)
 
 
+def _subsample_parabolic(values, peak):
+    """Sub-sample peak refinement via parabolic interpolation (fractional lag).
+
+    ``values`` is the correlation trace, ``peak`` its integer argmax index;
+    returns a correction in ``[-0.5, 0.5]`` samples (0 when the curvature is
+    degenerate).
+    """
+    if 0 < peak < len(values) - 1:
+        left, mid, right = values[peak - 1], values[peak], values[peak + 1]
+        denom = left - 2.0 * mid + right
+        if abs(denom) > 1e-12:
+            delta = 0.5 * (left - right) / denom
+            return float(max(min(delta, 0.5), -0.5))
+    return 0.0
+
+
+def _reference_lobe_width(reference):
+    """Effective width (samples) of the reference's own autocorrelation lobe.
+
+    The first lag ``k > 0`` at which the normalised |autocorrelation| drops
+    below 5 % of its peak. Positive-lag correlation within this region is the
+    DIRECT pulse's self-overlap tail, which would otherwise outrank a weak
+    echo and must be excluded when locating the echo peak.
+    """
+    ref = np.asarray(reference, dtype=np.float64)
+    ac = np.abs(np.correlate(ref, ref, mode="full"))
+    pad = len(ref) - 1
+    peak = ac[pad]
+    if peak <= 0.0:
+        return 0
+    for k in range(1, pad + 1):
+        if ac[pad + k] / peak < 0.05:
+            return k
+    return pad
+
+
+def _echo_lag_from_corr(corr, pad, lobe):
+    """Lag of the first echo peak relative to the direct-pulse reference.
+
+    ``corr`` is ``|cross_correlation(delayed, reference)|`` (full), ``pad`` is
+    ``len(reference) - 1`` (lag-0 index) and ``lobe`` the direct-lobe width.
+    Only strictly-positive lags are searched. If the reference's own lobe is
+    dominant at lag 0 (a direct pulse is present) the search starts beyond the
+    lobe; otherwise (echo-only input) the global positive-lag maximum is used.
+    Returns an integer lag in samples.
+    """
+    if corr[pad] == float(np.max(corr)) and lobe > 0:
+        lo = pad + lobe + 1
+    else:
+        lo = pad + 1
+    if corr[lo:].size == 0:
+        return 0
+    i = int(np.argmax(corr[lo:])) + lo
+    return i - pad
+
+
 def delay_xcorr(reference, delayed, fs):
-    """Estimate delay via plain (normalised) cross-correlation.
+    """Estimate the echo delay relative to the direct-pulse reference.
+
+    Alignment convention (project-wide): the *direct* pulse is the reference
+    at lag 0, so the echo is the strongest correlation peak on strictly
+    positive lags (later arrivals only). The integer lag is refined with a
+    parabolic sub-sample correction.
 
     Args:
         reference (array): Clean transmitted pulse.
-        delayed (array): Received signal containing the delayed echo.
+        delayed (array): Received signal containing the echo.
         fs (float): Sampling rate in Hz.
 
     Returns:
-        float: Estimated delay in seconds. Positive when ``delayed`` is a
-        later (time-shifted) copy of ``reference``.
+        float: Estimated delay in seconds (> 0 = echo arrives after the
+        direct pulse).
     """
     ref = np.asarray(reference, dtype=np.float64)
     dl = np.asarray(delayed, dtype=np.float64)
     ref = ref - ref.mean()
     dl = dl - dl.mean()
-    corr = np.correlate(dl, ref, mode="full")
-    lag = int(np.argmax(np.abs(corr))) - (len(ref) - 1)
-    return float(lag) / float(fs)
+    corr = np.abs(np.correlate(dl, ref, mode="full"))
+    pad = len(ref) - 1
+    lobe = _reference_lobe_width(ref)
+    lag = _echo_lag_from_corr(corr, pad, lobe)
+    frac = _subsample_parabolic(corr, lag + pad)
+    return float(lag + frac) / float(fs)
 
 
 def delay_gcc_phat(reference, delayed, fs, nfft=None):
-    """Estimate delay via GCC-PHAT (phase transform).
+    """Estimate echo delay via GCC-PHAT (phase transform).
+
+    Same alignment convention as :func:`delay_xcorr`: the delayed echo is
+    sought among strictly positive lags only (the direct pulse is the
+    reference at lag 0).
 
     Args:
         reference (array): Clean transmitted pulse.
@@ -170,9 +238,12 @@ def delay_gcc_phat(reference, delayed, fs, nfft=None):
     cross = np.conj(S) * D  # G21 phasor, so a later echo gives a positive lag
     cross /= np.abs(cross) + 1e-10  # PHAT weighting (whitened phase)
     r = np.fft.irfft(cross, nfft)
-    peak = int(np.argmax(np.abs(r)))
-    lag = peak if peak <= nfft // 2 else peak - nfft
-    return float(lag) / float(fs)
+    zone = np.abs(r[1 : nfft // 2])  # strictly-positive circular lags only
+    if zone.size == 0:
+        return 0.0
+    k = int(np.argmax(zone)) + 1
+    frac = _subsample_parabolic(np.abs(r), k)
+    return float(k + frac) / float(fs)
 
 
 @dataclass(frozen=True)
@@ -203,11 +274,14 @@ def delay_pipeline(
     1. ``Wavelet denoise`` the noisy measurement (db4, soft threshold).
     2. ``NLMS echo isolation`` -- the residual of predicting the (denoised)
        measurement from the reference pulse.
-    3. ``Peak picking`` on ``|residual[skip:]|`` with parabolic sub-sample
-       interpolation around the integer peak.
+    3. ``Aligned echo delay`` -- the echo time is the residual amplitude
+       peak inside the skipped (direct-pulse-free) region, refined by a
+       parabolic sub-sample correction; the reported delay is that echo time
+       MINUS the reference's own intra-window peak time, i.e. it is measured
+       peak-to-peak against the transmitted pulse.
 
-    The reported delay is ``peak_time - reference_pulse_time``, so a later
-    echo yields a positive delay (seconds).
+    The direct-pulse region is masked by ``skip``, so the delay is relative
+    to the direct pulse wherever it sits in the observation window.
 
     Args:
         noisy (array): Observed acoustic signal (pulse + echo + noise).
@@ -226,9 +300,11 @@ def delay_pipeline(
         correction and inferred distance.
     """
     clean = denoise_wavelet(np.asarray(noisy, dtype=np.float64), wavelet=wavelet)
-    echo = nlms_filter(
-        np.asarray(reference, dtype=np.float64), clean, mu=mu, order=order
-    )
+    # Align the reference to the measurement by applying the SAME wavelet
+    # operator to it: any denoising edge-ringing then matches the echo's
+    # ringing at the true roll lag instead of biasing the correlation peak.
+    ref = denoise_wavelet(np.asarray(reference, dtype=np.float64), wavelet=wavelet)
+    echo = nlms_filter(ref, clean, mu=mu, order=order)
 
     zone = np.abs(echo[skip:])
     local_peak = int(np.argmax(zone))
@@ -246,6 +322,10 @@ def delay_pipeline(
             subsample = 0.5 * (left - right) / denom
             subsample = max(min(subsample, 0.5), -0.5)
 
+    # aligned echo delay w.r.t. the direct-pulse reference: the echo's
+    # amplitude peak sits at ``skip + argmax|echo[skip:]|`` and the direct
+    # pulse contributes no background inside the skipped region, so the delay
+    # is the echo peak time minus the reference's own intra-window peak time.
     reference_peak = int(np.argmax(np.abs(reference))) if len(reference) else 0
     delay_s = (peak_idx + subsample) / float(fs) - reference_peak / float(fs)
     distance_m = delay_to_distance(delay_s, T, P)
