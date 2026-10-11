@@ -1,0 +1,15 @@
+venv/
+.venv/
+monster_env/
+__pycache__/
+*.pyc
+.env
+*.key
+*.h5
+*.keras
+*.npy
+data/external/
+data/synthetic/
+results/tmp/
+project_source_code*.txt
+*.log

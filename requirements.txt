@@ -1,0 +1,19 @@
+tensorflow==2.21.0
+tf-keras==2.21.0
+tensorflow-probability==0.25.0
+deepxde==1.15.0
+numpy==2.5.4
+scipy==1.18.1
+pandas==3.0.6
+matplotlib==3.11.2
+pywavelets==1.10.0
+websockets==17.2
+cryptography==50.0.2
+python-dotenv==1.2.4
+PyYAML==6.0.3
+pytest==9.1.1
+dash==4.4.1
+plotly==7.1.0
+dash-bootstrap-components==2.0.4
+streamlit==1.65.0
+pymodbus==3.6.9  # DO NOT UPGRADE: API break in 3.13

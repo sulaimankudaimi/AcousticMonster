@@ -1,0 +1,13 @@
+bridge:
+  host: "127.0.0.1"
+  port: 5020
+  ws_uri: "ws://127.0.0.1:8000/ws/stream"
+
+decision:
+  blockage_threshold: 0.7
+  emergency_threshold: 0.98
+
+security:
+  max_packet_age_s: 30
+
+mode: shadow  # shadow | advisory | live_control
