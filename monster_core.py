@@ -4,8 +4,11 @@
 # الإصدار: 12.0 - دعم الأسطول الشامل وتصحيح العدادات المالية (Hybrid Mode)
 # ==============================================================================
 
+import logging
 import math
 import random
+
+logger = logging.getLogger(__name__)
 
 # --- [0. معالجة التوافقية (Compatibility Shield)] ---
 # محاولة استيراد numpy، وفي حال الفشل يتم تفعيل المحاكي الداخلي لضمان عدم توقف النظام
@@ -14,7 +17,9 @@ try:
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
-    print("⚠️ Caution: NumPy not found. Core-Engine switching to Pure-Python Math Mode.")
+    logger.warning(
+        "NumPy not found. Core-Engine switching to Pure-Python Math Mode."
+    )
 
 # --- [1. محرك التحليل المالي والقياسات] ---
 

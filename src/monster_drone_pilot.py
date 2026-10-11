@@ -1,5 +1,8 @@
-# monster_drone_pilot.py
-# بروتوكول أجنحة الوحش - الإصدار 1.0
+"""MOCK MODULE -- drone pilot (research placeholder, NOT part of the live path).
+
+This module is imported by no main path. It exists only to show the intended
+drone-recon concept; do not wire it into production without a full review.
+"""
 import time
 
 class MonsterDrone:

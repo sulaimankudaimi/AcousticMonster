@@ -23,16 +23,8 @@ except ImportError:
     shield = None
 
 # --- [1. المحرك التحليلي والتوأم الرقمي المصحح فيزيائياً] ---
-def autonomous_manager(physics_loss, risk_cost):
-    """مدير اتخاذ القرار التلقائي بناءً على الانحراف الفيزيائي لـ PINN"""
-    if physics_loss > 0.60 or risk_cost > 50000:
-        return "🚨 CRITICAL METRIC: Automated Pipeline Isolation Valve Shutdown Activated.", "red"
-    elif physics_loss > 0.25:
-        return "⚠️ WARNING: Micro-Leak Acoustic Signature Detected via Wavelet Matrix.", "orange"
-    elif physics_loss > 0.08:
-        return "🟡 ADVISORY: Minor Acoustic Transient Signal Under PINN Observation.", "blue"
-    else:
-        return "✅ NOMINAL OPERATION: Sovereign Asset Integrity Perfectly Secure.", "green"
+# The single autonomous_manager lives in monster_core (STEP 5 consolidation).
+from monster_core import autonomous_manager
 
 def genetic_optimization_live(current_p):
     """محاكاة حساب نقطة التشغيل المثلى للضغط"""
