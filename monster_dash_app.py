@@ -1,8 +1,13 @@
+import os
+
+os.environ["SETUPTOOLS_USE_DISTUTILS"] = "local"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ.setdefault("DDE_BACKEND", "tensorflow")
+
 import dash
 from dash import dcc, html, Input, Output, State, no_update
 import dash_bootstrap_components as dbc
 import plotly.graph_objs as go
-import os
 import pandas as pd
 import random
 
@@ -242,4 +247,4 @@ def run_ai_optimizer(n, p, v):
     return html.Div([html.Span(f"Optimal Pressure: {res} Bar", className="text-info fw-bold")])
 
 if __name__ == '__main__':
-    app.run(debug=True, port=8050)
+    app.run(debug=False, port=8050)
