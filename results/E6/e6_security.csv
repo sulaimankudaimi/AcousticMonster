@@ -1,0 +1,6 @@
+case,expected,observed
+tamper,reject,reject
+stale (ttl),reject,reject
+exact replay,reject,reject
+wrong key,reject,reject
+missing secret,reject,reject
