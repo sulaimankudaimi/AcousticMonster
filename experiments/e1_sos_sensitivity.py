@@ -105,7 +105,8 @@ def run(n_mc=N_MC, out_dir=OUT_DIR):
     fig.colorbar(im, label="relative error %", ax=ax)
     stem = common.save_fig(fig, os.path.join(out_dir, "e1_speed_error"), width_cm=8.5)
 
-    rel = np.array([r["rel_err_343_pct"] for r in rows if r["P"] == 50.0 and r["x_b_m"] == 5.0])
+    uniq = {(r["T"], r["P"]): r["rel_err_343_pct"] for r in rows}
+    rel = np.array(list(uniq.values()))
     pm = np.array([r["pipe_mae_m"] for r in rows])
     pr = np.array([r["pipe_rmse_m"] for r in rows])
     p3 = np.array([r["pipe_rmse_c343_m"] for r in rows])
