@@ -11,20 +11,24 @@ import tensorflow as tf
 from src.sovereign_brain import build_sovereign_model
 
 DATA = os.path.join("data", "synthetic")
+SEEDS = [0, 1, 2]
 
 
-def load(key):
+def load_split(key):
     with np.load(os.path.join(DATA, f"{key}.npz")) as z:
         return z["X"], z["env"], z["y"]
 
 
-def train(X, E, y, epochs=30, patience=5, batch=64, seed=0):
+def train_sovereign(X, E, y, epochs=30, patience=5, batch=64, seed=0, run_eagerly=False):
     tf.keras.utils.set_random_seed(seed)
-    model = build_sovereign_model(run_eagerly=False)
+    model = build_sovereign_model(run_eagerly=run_eagerly)
     cb = tf.keras.callbacks.EarlyStopping(
         monitor="val_loss", patience=patience, restore_best_weights=True
     )
-    t0 = tf.timestamp() if hasattr(tf, "timestamp") else None
+    try:
+        t0 = tf.timestamp()
+    except Exception:
+        t0 = 0.0
     hist = model.fit(
         [X, E],
         y,
@@ -35,6 +39,24 @@ def train(X, E, y, epochs=30, patience=5, batch=64, seed=0):
         callbacks=[cb],
         verbose=0,
     )
-    t1 = tf.timestamp() if hasattr(tf, "timestamp") else None
-    dt = (float(t1) - float(t0)) if (t0 is not None and t1 is not None) else 0.0
+    try:
+        t1 = tf.timestamp()
+    except Exception:
+        t1 = 0.0
+    dt = float(t1) - float(t0)
     return model, hist, dt
+
+
+def predict_sovereign_dist(model, X, E):
+    out = model([X, E])
+    loc = out.numpy()
+    scale = out._dist.scale.numpy()
+    return loc, scale
+
+
+def train(X, E, y, epochs=30, patience=5, batch=64, seed=0, run_eagerly=False):
+    return train_sovereign(X, E, y, epochs=epochs, patience=patience, batch=batch, seed=seed, run_eagerly=run_eagerly)
+
+
+def load(key):
+    return load_split(key)
