@@ -60,6 +60,25 @@ def _latency_ms(model, X, E):
     return med, iqr
 
 
+def _total_ram_gb():
+    try:
+        import ctypes
+
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
+        return round(stat.ullTotalPhys / (1024 ** 3), 2)
+    except Exception:
+        return None
+
+
 def run():
     common.style()
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -92,6 +111,8 @@ def run():
     max_diff = float(np.max(np.abs(losses[False][:n] - losses[True][:n])))
     info = common.versions()
     info.update({"processor": platform.processor(), "machine": platform.machine(),
+                 "cpu_count": os.cpu_count(), "total_ram_gb": _total_ram_gb(),
+                 "os": platform.platform(),
                  "epochs": EPOCHS, "batch": BATCH, "train_samples": N_TRAIN,
                  "loss_curve_max_abs_diff": max_diff})
     common.save_json(os.path.join(OUT_DIR, "e7_perf.json"), info)
@@ -102,7 +123,7 @@ def run():
         print(f"{str(r['run_eagerly']):<11s}  {r['per_epoch_s_mean']:.3f}+-{r['per_epoch_s_std']:.3f}          "
               f"{r['infer_ms_median']:.3f}          {r['infer_ms_iqr']:.3f}")
     print(f"5-epoch loss-curve max abs diff (eager vs graph): {max_diff:.3e}")
-    print(f"hardware: {info.get('processor')} | {info.get('platform')}")
+    print(f"CPU: {info.get('processor')} ({info.get('cpu_count')} threads) | RAM: {info.get('total_ram_gb')} GB | OS: {info.get('os')}")
     print(f"software: python {info.get('python')} tf {info.get('tensorflow')} numpy {info.get('numpy')}")
     print(f"wrote {os.path.join(OUT_DIR, 'e7_perf.csv')} ; {os.path.join(OUT_DIR, 'e7_perf.json')}")
     return rows, max_diff
