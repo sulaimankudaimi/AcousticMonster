@@ -116,7 +116,7 @@ def run():
     ax.set_xlabel("echo SNR (dB)"); ax.set_ylabel("delay RMSE (samples)")
     ax.set_title("E3: delay estimation RMSE vs echo SNR (log-y)")
     ax.legend(fontsize=6)
-    stem = common.save_fig(fig, os.path.join(OUT_DIR, "e3_rmse"), width_cm=8.5)
+    stem = common.save_fig(fig, os.path.join(OUT_DIR, "e3_rmse_vs_snr"), width_cm=8.5)
     print("echo_snr  " + "".join(f"{m.split(' ')[0]:>13s}" for m in METHODS))
     for req in GRID:
         line = f"{req:>+7.1f}  "
