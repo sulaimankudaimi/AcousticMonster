@@ -27,6 +27,11 @@ def style():
         pass
 
 
+PALETTE = [
+    "#0173B2", "#DE8F05", "#029E73", "#D55E00", "#CC78BC", "#CA9161",
+]
+
+
 def save_csv(path, rows, header):
     import csv
 
@@ -34,12 +39,56 @@ def save_csv(path, rows, header):
         w = csv.writer(fh)
         w.writerow(header)
         for r in rows:
-            w.writerow(r)
+            if isinstance(r, dict):
+                w.writerow([r.get(h, "") for h in header])
+            else:
+                w.writerow(r)
 
 
 def save_json(path, obj):
     with open(path, "w") as fh:
         json.dump(obj, fh, indent=2)
+
+
+def save_fig(fig, stem, width_cm=8.5, dpi=300):
+    """Save ``fig`` as ``<stem>.png`` and ``<stem>.pdf``; return the stem."""
+    os.makedirs(os.path.dirname(stem) or ".", exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(stem + ".png", dpi=dpi)
+    fig.savefig(stem + ".pdf")
+    try:
+        import matplotlib.pyplot as plt
+
+        plt.close(fig)
+    except Exception:
+        pass
+    return stem
+
+
+def versions():
+    import platform
+    import sys
+
+    v = {"python": sys.version.split()[0], "platform": platform.platform()}
+    try:
+        import numpy
+
+        v["numpy"] = numpy.__version__
+    except Exception:
+        pass
+    try:
+        import tensorflow as tf
+
+        v["tensorflow"] = tf.__version__
+    except Exception:
+        pass
+    try:
+        import scipy
+
+        v["scipy"] = scipy.__version__
+    except Exception:
+        pass
+    return v
 
 
 def bootstrap_ci(arr, n=1000, alpha=0.95):
