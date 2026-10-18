@@ -1,3 +1,0 @@
-flag,mode,danger,write_register_calls_measured
-system_armed,normal,high-flow,0
-bypass_enabled,diagnostic,false-positive,0
