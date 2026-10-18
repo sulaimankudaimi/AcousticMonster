@@ -1,20 +1,18 @@
 {
-  "batch": 64,
-  "circularity": "physics-trained model evaluated on physics-simulated data",
   "epochs_cap": 30,
   "patience": 5,
+  "batch": 64,
   "seeds": [
     0,
     1,
     2
   ],
+  "circularity": "physics-trained model evaluated on physics-simulated data",
   "version": {
-    "cpu": "Intel64 Family 6 Model 189 Stepping 1, GenuineIntel",
-    "numpy": "2.5.4",
-    "platform": "Windows-10-10.0.19045-SP0",
     "python": "3.12.15",
-    "pywt": "1.8.0",
-    "scipy": "1.18.1",
-    "tensorflow": "2.21.0"
+    "platform": "Windows-10-10.0.19045-SP0",
+    "numpy": "2.5.4",
+    "tensorflow": "2.21.0",
+    "scipy": "1.18.1"
   }
 }
