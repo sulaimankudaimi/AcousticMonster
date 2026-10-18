@@ -6,9 +6,10 @@ For ALL 684 GPLA-12 samples (data_v1), two input modes (raw int64 and
 per-row DC-removed) x two reference scalings:
 - ``unit``: baseline-faithful reference (Gaussian-windowed pulse at the
   sample's dominant frequency, amplitude ~1, exactly the synthetic-style
-  reference the baseline was tuned on),
+  reference the baseline was tuned on) -- label "baseline-faithful",
 - ``adc``: the same pulse re-scaled so its peak equals the dataset max
-  amplitude (1471) -- a field A2D sensor gain scenario.
+  amplitude (1471) -- a DESIGNED STRESS TEST (a field A2D sensor gain
+  scenario), NOT an observed failure of the original pipeline.
 
 Non-finite counts are reported PER STAGE for the legacy flow
 (``experiments.legacy.legacy_pipeline``: wavelet denoise -> plain-LMS echo
@@ -18,18 +19,21 @@ denoise -> eps-normalised NLMS -> peak/sub-sample delay). LF: (1) denoise,
 
 The claim made here is limited to NUMERICAL ROBUSTNESS: per-stage non-finite
 output counts. The baseline-faithful configuration (unit reference) produced
-no failures. Printed only (NOT committed); this script is the reproducible
-probe for the paper.
+no failures. Outputs ``results/E5/e5_robustness.csv`` and
+``results/E5/e5_robustness.png/.pdf``.
 """
 
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import numpy as np
 import pandas as pd
 
+import matplotlib.pyplot as plt
+
+from experiments import common
 from experiments.legacy.legacy_pipeline import apply_wavelet_denoising, simple_lms
 from src.signal_core import denoise_wavelet, delay_pipeline, nlms_filter
 from src.synth.generator import FS
@@ -38,6 +42,7 @@ GPLA_CSV = os.path.join("data", "external", "gpla12", "data", "data_v1", "data.c
 ADC_PEAK = 1471.0
 MU = 0.01
 SKIP = 200
+OUT_DIR = os.path.join("results", "E5")
 
 
 def dominant_freq_amplitude(sig):
@@ -95,16 +100,23 @@ def report(rows):
 
 
 def main():
+    common.style()
+    os.makedirs(OUT_DIR, exist_ok=True)
     d = pd.read_csv(GPLA_CSV, header=None).to_numpy()
     print("E5: GPLA-12 numerical robustness, legacy vs corrected, per stage")
-    print(f"rows={len(d)}  mu={MU} order=1 skip={SKIP}; ADC reference peak = {ADC_PEAK:.0f}\n")
+    print(f"rows={len(d)}  mu={MU} order=1 skip={SKIP}; ADC reference peak = {ADC_PEAK:.0f} "
+          "(adc = designed stress test)\n")
     header = ("input          ref    legacy_denoise  legacy_lms  legacy_blowup  "
               "corr_denoise  corr_nlms    corr_delay")
     print(header)
+    csv_rows = []
+    label = {"unit": "baseline-faithful", "adc": "designed stress test"}
     for name, rows in (("raw int64", d), ("dc-removed", d - d.mean(axis=1, keepdims=True))):
         res = report(rows)
         for tag in ("unit", "adc"):
             r = res[tag]
+            r_out = {"input": name, "reference": tag, "label": label[tag], "n": len(d), **r}
+            csv_rows.append(r_out)
             print(
                 f"{name:<12}{tag:<7} {r['legacy_denoise_nan']:>13} {r['legacy_lms_nan']:>10} "
                 f"{r['legacy_lms_blowup']:>13} "
@@ -112,8 +124,29 @@ def main():
             )
         print()
 
+    hdr = ["input", "reference", "label", "n", "legacy_denoise_nan", "legacy_lms_nan",
+           "legacy_lms_blowup", "corr_denoise_nan", "corr_nlms_nan", "corr_delay_nan"]
+    common.save_csv(os.path.join(OUT_DIR, "e5_robustness.csv"), csv_rows, hdr)
+
+    # figure: legacy blow-ups vs corrected failures, unit vs designed stress test
+    fig, ax = plt.subplots(figsize=(8.5 / 2.54, 6 / 2.54))
+    groups = [("raw/unit", 0, 0), ("raw/adc", 0, 1), ("dc/unit", 1, 0), ("dc/adc", 1, 1)]
+    x = np.arange(len(groups)); w = 0.35
+    legacy_blow = [csv_rows[i * 2 + j]["legacy_lms_blowup"] for (_, i, j) in groups]
+    corr_fail = [csv_rows[i * 2 + j]["corr_nlms_nan"] + csv_rows[i * 2 + j]["corr_delay_nan"] for (_, i, j) in groups]
+    ax.bar(x - w / 2, legacy_blow, w, color=common.PALETTE[3], label="legacy LMS blow-up")
+    ax.bar(x + w / 2, corr_fail, w, color=common.PALETTE[2], label="corrected NLMS/delay failures")
+    ax.set_xticks(x); ax.set_xticklabels([g[0] for g in groups])
+    ax.set_ylabel("samples (of %d)" % len(d))
+    ax.set_title("E5: numerical robustness (adc = designed stress test)")
+    ax.legend(fontsize=7)
+    stem = common.save_fig(fig, os.path.join(OUT_DIR, "e5_robustness"), width_cm=8.5)
+
     print("statement: baseline-faithful (unit reference) produced NO failures in any stage "
           "(0 non-finite across all 684 rows, both input modes).")
+    print("ADC-scaled reference is a DESIGNED STRESS TEST, not an observed failure of the "
+          "original pipeline.")
+    print(f"wrote {os.path.join(OUT_DIR, 'e5_robustness.csv')} ; {stem}.png/.pdf")
 
 
 if __name__ == "__main__":

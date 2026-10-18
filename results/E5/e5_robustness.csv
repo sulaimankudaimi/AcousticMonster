@@ -1,5 +1,5 @@
-input,reference,legacy_denoise_nan,legacy_lms_nan,legacy_lms_blowup,corr_denoise_nan,corr_nlms_nan,corr_delay_nan,n
-raw int64,unit,0,0,0,0,0,0,684
-raw int64,adc,0,0,684,0,0,0,684
-dc-removed,unit,0,0,0,0,0,0,684
-dc-removed,adc,0,0,684,0,0,0,684
+input,reference,label,n,legacy_denoise_nan,legacy_lms_nan,legacy_lms_blowup,corr_denoise_nan,corr_nlms_nan,corr_delay_nan
+raw int64,unit,baseline-faithful,684,0,0,0,0,0,0
+raw int64,adc,designed stress test,684,0,0,684,0,0,0
+dc-removed,unit,baseline-faithful,684,0,0,0,0,0,0
+dc-removed,adc,designed stress test,684,0,0,684,0,0,0
