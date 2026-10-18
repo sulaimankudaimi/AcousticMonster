@@ -39,6 +39,7 @@ from src.signal_core import denoise_wavelet, delay_pipeline, nlms_filter
 from src.synth.generator import FS
 
 GPLA_CSV = os.path.join("data", "external", "gpla12", "data", "data_v1", "data.csv")
+LABEL_CSV = os.path.join("data", "external", "gpla12", "data", "data_v1", "label.csv")
 ADC_PEAK = 1471.0
 MU = 0.01
 SKIP = 200
@@ -99,6 +100,23 @@ def report(rows):
     return res
 
 
+def class_stats(d):
+    """Per-class pooled mean/std of raw data and of per-row DC-removed data."""
+    lab = pd.read_csv(LABEL_CSV, header=None)[0].to_numpy()
+    dc = d - d.mean(axis=1, keepdims=True)
+    rows = []
+    for c in sorted(set(lab.tolist())):
+        m = lab == c
+        raw = d[m]
+        rem = dc[m]
+        rows.append({
+            "class": int(c), "n": int(m.sum()),
+            "raw_mean": float(np.mean(raw)), "raw_std": float(np.std(raw)),
+            "dc_mean": float(np.mean(rem)), "dc_std": float(np.std(rem)),
+        })
+    return rows
+
+
 def main():
     common.style()
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -146,7 +164,20 @@ def main():
           "(0 non-finite across all 684 rows, both input modes).")
     print("ADC-scaled reference is a DESIGNED STRESS TEST, not an observed failure of the "
           "original pipeline.")
-    print(f"wrote {os.path.join(OUT_DIR, 'e5_robustness.csv')} ; {stem}.png/.pdf")
+
+    cs = class_stats(d)
+    common.save_csv(os.path.join(OUT_DIR, "e5_class_stats.csv"), cs,
+                    ["class", "n", "raw_mean", "raw_std", "dc_mean", "dc_std"])
+    print("\nper-class raw mean/std before and after DC removal:")
+    print("class   n    raw_mean    raw_std    dc_mean   dc_std")
+    for r in cs:
+        print(f"{r['class']:>4}  {r['n']:>3}  {r['raw_mean']:>9.2f}  {r['raw_std']:>9.2f}  "
+              f"{r['dc_mean']:>9.3f}  {r['dc_std']:>8.2f}")
+    allraw = np.mean([r["raw_mean"] for r in cs]); allstd = np.mean([r["raw_std"] for r in cs])
+    alldc = np.mean([r["dc_mean"] for r in cs]); alldcstd = np.mean([r["dc_std"] for r in cs])
+    print(f"all-classes mean raw={allraw:.2f} raw_std={allstd:.2f} dc_mean={alldc:.4f} dc_std={alldcstd:.2f}")
+    print(f"wrote {os.path.join(OUT_DIR, 'e5_robustness.csv')} ; {stem}.png/.pdf ; "
+          f"{os.path.join(OUT_DIR, 'e5_class_stats.csv')}")
 
 
 if __name__ == "__main__":
