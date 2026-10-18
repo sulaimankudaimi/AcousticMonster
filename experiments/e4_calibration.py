@@ -147,6 +147,7 @@ def run(epochs=None, out_dir=OUT_DIR, seeds=None):
          "version": common.versions()})
 
     dim_name = {"s": "severity", "x_b (metres)": "location", "snr": "quality"}
+    tt_lookup = {(t["seed"], t["target_type"]): t["training_time_s"] for t in train_times}
     metrics = []
     for m in rows:
         is_loc = m["dim"] == "x_b (metres)"
@@ -157,12 +158,13 @@ def run(epochs=None, out_dir=OUT_DIR, seeds=None):
             "nll": round(m["nll"], 6),
             "cov50": round(m["cov50"], 6), "cov80": round(m["cov80"], 6), "cov90": round(m["cov90"], 6),
             "mean_width": round(m["width80"], 6),
+            "train_time_s": round(tt_lookup[(m["seed"], m["target_type"])], 3) if (m["seed"], m["target_type"]) in tt_lookup else "",
         })
     for cr in class_rows:
         metrics.append({"train_set": "E3 full-pipeline", "test_set": cr["dataset"], "seed": "",
                         "output": "location", "mae_m": round(cr["location_mae_m"], 6),
-                        "nll": "", "cov50": "", "cov80": "", "cov90": "", "mean_width": ""})
-    mhdr = ["train_set", "test_set", "seed", "output", "mae_m", "nll", "cov50", "cov80", "cov90", "mean_width"]
+                        "nll": "", "cov50": "", "cov80": "", "cov90": "", "mean_width": "", "train_time_s": ""})
+    mhdr = ["train_set", "test_set", "seed", "output", "mae_m", "nll", "cov50", "cov80", "cov90", "mean_width", "train_time_s"]
     common.save_csv(os.path.join(out_dir, "e4_metrics.csv"), metrics, mhdr)
 
     df = pd.DataFrame(rows)
