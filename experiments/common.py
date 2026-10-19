@@ -31,6 +31,13 @@ PALETTE = [
     "#0173B2", "#DE8F05", "#029E73", "#D55E00", "#CC78BC", "#CA9161",
 ]
 
+SEEDS = [0, 1, 2]
+
+
+def rng(seed):
+    """Deterministic NumPy generator (legacy RandomState, reproducible)."""
+    return np.random.RandomState(seed)
+
 
 def save_csv(path, rows, header):
     import csv
@@ -91,18 +98,29 @@ def versions():
     return v
 
 
-def bootstrap_ci(arr, n=1000, alpha=0.95):
+def bootstrap_ci(arr, n=1000, alpha=0.95, stat=np.mean, seed=123):
+    """Percentile bootstrap CI. ``alpha=0.95`` -> [2.5 %, 97.5 %]."""
     arr = np.asarray(arr)
     if arr.size == 0:
-        return (np.nan, np.nan)
-    rng = np.random.RandomState(123)
+        return (float("nan"), float("nan"))
+    rs = np.random.RandomState(seed)
     bs = np.empty(n)
     for i in range(n):
-        idx = rng.randint(0, len(arr), len(arr))
-        bs[i] = np.mean(arr[idx])
-    lo = np.percentile(bs, (1 - alpha) * 100)
-    hi = np.percentile(bs, (1 + alpha) * 100)
+        idx = rs.randint(0, len(arr), len(arr))
+        bs[i] = stat(arr[idx])
+    lo = float(np.percentile(bs, (1.0 - alpha) / 2.0 * 100.0))
+    hi = float(np.percentile(bs, (1.0 + alpha) / 2.0 * 100.0))
     return (lo, hi)
+
+
+def sha256_file(path):
+    import hashlib
+
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def write_manifest(path, meta):

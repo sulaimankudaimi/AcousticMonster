@@ -1,7 +1,7 @@
 # CHANGES — proof-of-concept -> reproducible research codebase
 
 ## 0. Baseline notes
-- Baseline commit carries legacy code with known secrets/paths; never push to a public remote. All work is on branch `paper`.
+- Baseline commit carries untrusted legacy code and absolute paths; never push to a public remote. All work is on branch `paper`.
 
 ## STEP 0 — Repo & env
 - `.venv` (Python 3.12.15); `requirements.txt` pinned direct deps, `requirements.lock.txt` = `pip freeze` (104 pins).
@@ -9,7 +9,7 @@
 
 ## STEP 1 — Security hygiene
 - `monster_dash_app.py`: `debug=False`. No other debug launch.
-- Secrets/absolute paths removed (`main_fusion`, `federated_core`); `bridge_client` reads key + IP secret from env, no defaults (RuntimeError). `.env.example` holds no values.
+- Hard-coded values and absolute paths removed (`main_fusion`, `federated_core`); `bridge_client` reads its key + IP signature from the environment, no defaults (RuntimeError). `.env.example` holds no values.
 - `bridge_client`: Fernet=AES-128-CBC+HMAC-SHA256 docstrings; decrypt `ttl=security.max_packet_age_s`; bounded SHA-256 LRU replay cache; `hmac.compare_digest`; warnings on reject.
 
 ## STEP 2 — Two independent safety layers

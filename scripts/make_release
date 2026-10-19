@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Build a source release zip from *tracked files only* and tag it.
+
+    python scripts/make_release [--tag v1.0-paper]
+
+Steps
+-----
+1. ``git archive`` HEAD (tracked files only) into ``release/<name>.zip``.
+   Because ``models/``, ``data/external/``, ``data/synthetic/``, ``.env`` and git
+   history are untracked, they are excluded automatically.
+2. Secret-scan every text member of the zip; if any credential value is found
+   the zip is deleted and the script exits non-zero.
+3. Create the annotated tag if it does not exist yet.
+
+Companion: ``scripts/scan_secrets.py`` (same rules, standalone).
+"""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import zipfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+
+from scan_secrets import scan_text  # noqa: E402
+
+MINGIT = r"C:\Users\00D2~1\AppData\Local\Temp\opencode\mingit\cmd\git.exe"
+
+
+def git():
+    exe = shutil.which("git") or (MINGIT if os.path.exists(MINGIT) else None)
+    if not exe:
+        raise SystemExit("git executable not found")
+    return exe
+
+
+def _git(args, check=True):
+    out = subprocess.run([git(), "-C", ROOT] + args, capture_output=True, text=True)
+    if check and out.returncode != 0:
+        raise SystemExit(f"git {' '.join(args)} failed: {out.stderr.strip()}")
+    return out
+
+
+def scan_zip(path):
+    findings = []
+    with zipfile.ZipFile(path) as zf:
+        for name in zf.namelist():
+            if name.endswith("/"):
+                continue
+            if os.path.splitext(name)[1].lower() not in {
+                ".py", ".md", ".txt", ".yaml", ".yml", ".json", ".cfg", ".ini",
+                ".toml", ".sh", ".cff", "", ".example", ".csv",
+            }:
+                continue
+            try:
+                text = zf.read(name).decode("utf-8", "ignore")
+            except Exception:
+                continue
+            for i, kind, snippet in scan_text(text):
+                findings.append((f"{name}:{i}", kind, snippet))
+    return findings
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--tag", default="v1.0-paper")
+    ap.add_argument("--no-tag", action="store_true")
+    args = ap.parse_args()
+
+    rel_dir = os.path.join(ROOT, "release")
+    os.makedirs(rel_dir, exist_ok=True)
+    name = f"acousticmonster-{args.tag}"
+    out_zip = os.path.join(rel_dir, name + ".zip")
+
+    _git(["archive", "--format=zip", f"--prefix={name}/", "-o", out_zip, "HEAD"])
+    size = os.path.getsize(out_zip)
+    print(f"wrote {out_zip} ({size} bytes)")
+
+    findings = scan_zip(out_zip)
+    if findings:
+        print("SECRET SCAN FAILED -- release removed:")
+        for loc, kind, snippet in findings:
+            print(f"  {kind:7s} {loc}: {snippet}")
+        os.remove(out_zip)
+        return 1
+    print("secret scan: 0 findings")
+
+    if not args.no_tag:
+        existing = _git(["tag", "--list", args.tag], check=False).stdout.strip()
+        if existing:
+            print(f"tag {args.tag} already exists")
+        else:
+            _git(["tag", "-a", args.tag, "-m", f"AcousticMonster {args.tag}"])
+            print(f"created tag {args.tag}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

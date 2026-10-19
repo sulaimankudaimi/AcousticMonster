@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "AcousticMonster: reproducible acoustic localisation and Bayesian calibration"
+type: software
+version: 1.0
+date-released: "2026-10-19"
+license: Apache-2.0
+repository-code: "https://github.com/example/AcousticMonster"
+abstract: >-
+  Research code reproducing the E1-E7 experiments: speed-of-sound sensitivity,
+  legacy-LMS divergence prediction, delay RMSE vs echo SNR, sovereign Bayesian
+  calibration, GPLA-12 numerical robustness, safety/security checks and
+  performance measurement. Datasets are pinned to a commit and sha256-verified.
+keywords:
+  - acoustics
+  - localisation
+  - Bayesian neural network
+  - pulse-echo
+  - reproducibility
+authors:
+  - family-names: "PlaceholderFamily"
+    given-names: "PlaceholderGiven"
+    affiliation: "Institution (to be completed)"
+    orcid: "https://orcid.org/0000-0000-0000-0000"
+  - family-names: "SecondAuthorFamily"
+    given-names: "SecondAuthorGiven"
+    affiliation: "Institution (to be completed)"
+contact:
+  - family-names: "PlaceholderFamily"
+    given-names: "PlaceholderGiven"
+    email: "author@example.org"
+references:
+  - type: article
+    title: "GPLA-12: An Acoustic Signal Dataset of Gas Pipeline Leakage"
+    authors:
+      - family-names: Li
+        given-names: Jian
+      - family-names: Yao
+        given-names: Liang
+    year: 2021
+    journal: "arXiv preprint"
+    doi: "10.48550/arXiv.2106.10277"

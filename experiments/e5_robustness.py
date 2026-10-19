@@ -100,9 +100,10 @@ def report(rows):
     return res
 
 
-def class_stats(d):
+def class_stats(d, lab=None):
     """Per-class pooled mean/std of raw data and of per-row DC-removed data."""
-    lab = pd.read_csv(LABEL_CSV, header=None)[0].to_numpy()
+    if lab is None:
+        lab = pd.read_csv(LABEL_CSV, header=None)[0].to_numpy()
     dc = d - d.mean(axis=1, keepdims=True)
     rows = []
     for c in sorted(set(lab.tolist())):
@@ -117,10 +118,13 @@ def class_stats(d):
     return rows
 
 
-def main():
+def main(n_rows=None):
     common.style()
     os.makedirs(OUT_DIR, exist_ok=True)
     d = pd.read_csv(GPLA_CSV, header=None).to_numpy()
+    lab = pd.read_csv(LABEL_CSV, header=None)[0].to_numpy()
+    if n_rows:
+        d, lab = d[:n_rows], lab[:n_rows]
     print("E5: GPLA-12 numerical robustness, legacy vs corrected, per stage")
     print(f"rows={len(d)}  mu={MU} order=1 skip={SKIP}; ADC reference peak = {ADC_PEAK:.0f} "
           "(adc = designed stress test)\n")
@@ -165,7 +169,7 @@ def main():
     print("ADC-scaled reference is a DESIGNED STRESS TEST, not an observed failure of the "
           "original pipeline.")
 
-    cs = class_stats(d)
+    cs = class_stats(d, lab)
     common.save_csv(os.path.join(OUT_DIR, "e5_class_stats.csv"), cs,
                     ["class", "n", "raw_mean", "raw_std", "dc_mean", "dc_std"])
     print("\nper-class raw mean/std before and after DC removal:")

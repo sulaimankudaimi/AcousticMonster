@@ -21,7 +21,8 @@ Observed divergence uses the same numerical criterion as E5/the probe: the
 legacy residual becomes non-finite OR exceeds the absolute ceiling 1e12.
 NLMS is reported but EXCLUDED from the agreement statistic.
 
-Outputs ``results/E2/e2_agreement.csv`` + ``results/E2/e2_agreement.png/.pdf``.
+Outputs ``results/E2/stability.csv`` (intermediate, consumed by
+``e2_agreement.py``) + ``results/E2/e2_agreement.png/.pdf``.
 """
 
 import os
@@ -127,16 +128,20 @@ def run():
             tot_agree_exact += a_G
             tot_agree_const += a_const
             tot_runs += N_MC
-    # write per-run agreement fractions for the CSV schema requested
+    # intermediate stability table consumed by e2_agreement.py (frozen schema)
     out_rows = []
     for r in rows:
         out_rows.append({
-            "mu": r["mu"], "s_x": r["s_x"], "observed_rate": round(r["observed_rate"], 6),
-            "G_pred": float(f"{r['G_pred']:.6e}"), "predicted_diverge": r["predicted_diverge"],
-            "constant_rule_pred": r["constant_rule_pred"],
+            "mu": r["mu"], "s_x": r["s_x"], "n": r["n"],
+            "legacy_bad": int(round(r["observed_rate"] * r["n"])),
+            "nlms_bad": r["nlms_bad"],
+            "const_pred_count": r["constant_rule_pred"],
+            "exact_pred_count": r["predicted_diverge"],
+            "agree_exact": r["agree_G"], "agree_const": r["agree_const"],
         })
-    hdr = ["mu", "s_x", "observed_rate", "G_pred", "predicted_diverge", "constant_rule_pred"]
-    common.save_csv(os.path.join(OUT_DIR, "e2_agreement.csv"), out_rows, hdr)
+    hdr = ["mu", "s_x", "n", "legacy_bad", "nlms_bad", "const_pred_count",
+           "exact_pred_count", "agree_exact", "agree_const"]
+    common.save_csv(os.path.join(OUT_DIR, "stability.csv"), out_rows, hdr)
 
     # exact-G boundary locus using a representative (mean) pulse shape
     rep = np.mean([p for _, p in draws], axis=0)
@@ -176,7 +181,7 @@ def run():
     cell = next(r for r in rows if r["mu"] == 0.5 and r["s_x"] == 10.0)
     print(f"cell(mu=0.5,s_x=10): observed_rate={cell['observed_rate']:.3f} "
           f"G_pred={cell['G_pred']:.3e} predicted_diverge={cell['predicted_diverge']} const_pred={cell['constant_rule_pred']}")
-    print(f"wrote results/E2/e2_agreement.csv ; {stem}.png/.pdf")
+    print(f"wrote results/E2/stability.csv ; {stem}.png/.pdf")
     return rows
 
 
