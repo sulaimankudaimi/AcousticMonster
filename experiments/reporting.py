@@ -63,7 +63,7 @@ def build_manifest(path=os.path.join(RESULTS, "MANIFEST.json")):
     meta = {
         "git_commit": commit,
         "git_branch": branch,
-        "generated_utc": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "generated_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
         "versions": common.versions(),
         "seeds": list(common.SEEDS),
         "runtimes_s": times,
@@ -229,7 +229,7 @@ def build_summary(path=os.path.join(RESULTS, "SUMMARY.md"), max_lines=200):
         "## Provenance",
         "",
         f"- git commit: `{commit}` (branch `{branch}`)",
-        f"- generated (UTC): {datetime.datetime.utcnow().isoformat(timespec='seconds')}Z",
+        f"- generated (UTC): {datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}",
         f"- python {v.get('python')} | tensorflow {v.get('tensorflow')} | numpy {v.get('numpy')} "
         f"| scipy {v.get('scipy')}",
         f"- seeds: {', '.join(str(s) for s in common.SEEDS)}",
