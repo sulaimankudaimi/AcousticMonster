@@ -11,5 +11,6 @@ __pycache__/
 data/external/
 data/synthetic/
 results/tmp/
+release/
 project_source_code*.txt
 *.log
