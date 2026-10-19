@@ -1,17 +1,32 @@
-"""E3: echo-SNR calibration of the delay estimators (5 methods).
+"""E3: echo-SNR calibration of the delay estimators (audited, fair baselines).
 
-Grid: echo_snr_db in {-15,-10,-5,0,5,10,15,20,25} dB, N=300 samples/cell. The
-echo-referenced SNR is set exactly through the generator's ``echo_snr_db``
-override. The echo delay is estimated on the NOISY measurement by five methods:
+Grid: echo_snr_db in {-15..25} dB, N=300 samples/cell. The echo-referenced SNR
+is set exactly through the generator's ``echo_snr_db`` override.
 
-- ``delay_xcorr``, ``delay_gcc_phat``, ``delay_pipeline`` (corrected estimators),
-- ``nlms-peak``: wavelet denoise (db4 level 2) then normalised-LMS echo
-  isolation and argmax peak (the numerically-robust counterpart of legacy),
-- ``legacy (baseline implementation)``: wavelet denoise then scalar plain-LMS
-  (``signal_scalpel.py`` @ ``2a5c569`` flow, ``mu=0.01``, skip=40).
+Methods.  All five comparable estimators share the SAME lag-search window: a
+direct-pulse skip mask that removes the leading direct-pulse lobe (and its
+ringing) before the echo peak is sought.
 
-Outputs ``results/E3/e3_table.csv`` (RMSE in samples and metres, median |err|,
-failure rate, 95 % bootstrap CI) and ``results/E3/e3_rmse.png/.pdf``.
+- ``delay_xcorr (plain)`` / ``delay_gcc_phat (plain)``: the library estimators
+  exactly as shipped (``src.signal_core``); no explicit common window.
+- ``delay_xcorr (masked)`` / ``delay_gcc_phat (masked)``: same correlation
+  traces, but the echo lag is searched inside ``[SKIP_MASK, N-1]`` only.
+- ``delay_pipeline``: wavelet denoise -> NLMS echo isolation -> parabolic peak
+  (``src.signal_core.delay_pipeline``), ``skip=SKIP_MASK``.
+- ``nlms-peak``: wavelet denoise (db4 level 2) then NLMS echo isolation and
+  argmax peak, ``skip=SKIP_MASK``.
+- ``legacy (baseline implementation)``: ``legacy_pipeline.legacy_pipeline``
+  (wavelet denoise then the verbatim scalar plain-LMS ``simple_lms``,
+  ``mu=0.01``), ``skip=SKIP_MASK`` -- a genuinely different code path from
+  ``nlms-peak`` (plain LMS vs normalised LMS, separate module).
+
+Denoising ablation (reported at echo SNR {-5,0,5,10,25} dB): NLMS+parabolic
+interpolation WITHOUT wavelet denoising, and wavelet levels {1,2,3} with a soft
+threshold whose scale is tuned on a SEPARATE tuning seed set (never the test
+seed).  All variants use the same direct-pulse skip mask.
+
+Outputs ``results/E3/e3_table.csv`` (RMSE samples + metres, median |err|,
+failure rate, 95 % bootstrap CI) and ``results/E3/e3_rmse_vs_snr.png/.pdf``.
 """
 
 import os
@@ -21,42 +36,192 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pywt
 
 from experiments import common
-from experiments.legacy.legacy_pipeline import apply_wavelet_denoising, simple_lms
-from src.signal_core import delay_gcc_phat, delay_pipeline, delay_xcorr, nlms_filter
+from experiments.legacy.legacy_pipeline import apply_wavelet_denoising, legacy_pipeline, simple_lms
+from src.signal_core import (
+    _reference_lobe_width,
+    _subsample_parabolic,
+    delay_gcc_phat,
+    delay_pipeline,
+    delay_xcorr,
+    nlms_filter,
+)
 from src.synth.generator import FS, build_sample
 
 N_CELL = 300
 SEED = 4242
+TUNE_SEED = 987654
 GRID = (-15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0, 25.0)
+ABL_GRID = (-5.0, 0.0, 5.0, 10.0, 25.0)
 MU = 0.01
-SKIP_LEGACY = 40
+SKIP_MASK = 24          # common direct-pulse skip (samples) for ALL methods
+WAVELET = "db4"
+TUNE_SCALES = (0.25, 0.5, 1.0, 2.0, 4.0)
 OUT_DIR = os.path.join("results", "E3")
 
 LEGACY = "legacy (baseline implementation)"
-METHODS = ("delay_xcorr", "delay_gcc_phat", "delay_pipeline", "nlms-peak", LEGACY)
+MAIN_METHODS = (
+    "delay_xcorr (plain)",
+    "delay_xcorr (masked)",
+    "delay_gcc_phat (plain)",
+    "delay_gcc_phat (masked)",
+    "delay_pipeline",
+    "nlms-peak",
+    LEGACY,
+)
+ABL_METHODS = (
+    "nlms+interp (no wavelet)",
+    "wavelet L1 (tuned)",
+    "wavelet L2 (tuned)",
+    "wavelet L3 (tuned)",
+)
+
+CALL_PATHS = [
+    ("delay_xcorr (plain)", "src.signal_core.delay_xcorr(reference, delayed, fs)"),
+    ("delay_xcorr (masked)", "src.signal_core.delay_xcorr internals, lag window [%d, N-1]" % SKIP_MASK),
+    ("delay_gcc_phat (plain)", "src.signal_core.delay_gcc_phat(reference, delayed, fs)"),
+    ("delay_gcc_phat (masked)", "src.signal_core.delay_gcc_phat internals, lag window [%d, N-1]" % SKIP_MASK),
+    ("delay_pipeline", "src.signal_core.delay_pipeline(noisy, reference, fs, T, P, mu=0.01, order=1, skip=%d)" % SKIP_MASK),
+    ("nlms-peak", "experiments.legacy.legacy_pipeline.apply_wavelet_denoising + src.signal_core.nlms_filter(mu=0.01, order=1)"),
+    (LEGACY, "experiments.legacy.legacy_pipeline.legacy_pipeline(mu=0.01, skip=%d) -> simple_lms" % SKIP_MASK),
+    ("nlms+interp (no wavelet)", "src.signal_core.nlms_filter + parabolic peak (no denoise)"),
+    ("wavelet Lx (tuned)", "pywt.wavedec/threshold soft (scale tuned) + nlms_filter + parabolic peak"),
+]
+
+
+# ---------------------------------------------------------------- estimators
+def _peak_interp(residual, fs, skip, reference_peak):
+    """Echo peak (skipped region) with parabolic sub-sample refinement."""
+    zone = np.abs(residual[skip:])
+    if zone.size == 0:
+        return 0.0
+    peak = int(np.argmax(zone)) + skip
+    frac = _subsample_parabolic(np.abs(residual), peak)
+    return (peak + frac - reference_peak) / float(fs)
+
+
+def _corr_window(corr, pad, lo, hi):
+    a, b = pad + lo, pad + hi + 1
+    seg = corr[a:b]
+    if seg.size == 0:
+        return 0.0
+    k = int(np.argmax(seg)) + lo
+    return k
+
+
+def xcorr_masked(meas, pulse, fs):
+    ref = pulse - pulse.mean()
+    dl = meas - meas.mean()
+    corr = np.abs(np.correlate(dl, ref, mode="full"))
+    pad = len(ref) - 1
+    k = _corr_window(corr, pad, SKIP_MASK, len(meas) - 1)
+    frac = _subsample_parabolic(corr, k + pad)
+    return (k + frac) / fs
+
+
+def gcc_masked(meas, pulse, fs):
+    ref = pulse - pulse.mean()
+    dl = meas - meas.mean()
+    n = len(ref) + len(dl) - 1
+    nfft = int(2 ** int(np.ceil(np.log2(n))))
+    S = np.fft.rfft(ref, nfft)
+    D = np.fft.rfft(dl, nfft)
+    cross = np.conj(S) * D
+    cross /= np.abs(cross) + 1e-10
+    r = np.abs(np.fft.irfft(cross, nfft))
+    k = _corr_window(r, 0, SKIP_MASK, len(meas) - 1)
+    frac = _subsample_parabolic(r, k)
+    return (k + frac) / fs
+
+
+def wavelet_denoise_tuned(signal, level, scale, wavelet=WAVELET):
+    coeffs = pywt.wavedec(signal, wavelet, mode="per")
+    sigma = (1.0 / 0.6745) * np.median(np.abs(coeffs[-level] - np.median(coeffs[-level])))
+    uthresh = scale * sigma * np.sqrt(2.0 * np.log(len(signal)))
+    if uthresh > 0.0:
+        coeffs[1:] = [pywt.threshold(c, uthresh, mode="soft") for c in coeffs[1:]]
+    return pywt.waverec(coeffs, wavelet, mode="per")
+
+
+def est_abl(method, meas, pulse, tuned):
+    ref_peak = int(np.argmax(np.abs(pulse)))
+    if method == "nlms+interp (no wavelet)":
+        residual = np.asarray(nlms_filter(pulse, meas, mu=MU, order=1), dtype=np.float64)
+    else:
+        level = int(method.split(" L")[1][0])
+        den = np.asarray(wavelet_denoise_tuned(meas, level, tuned[level]), dtype=np.float64)
+        residual = np.asarray(nlms_filter(pulse, den, mu=MU, order=1), dtype=np.float64)
+    return _peak_interp(residual, FS, SKIP_MASK, ref_peak) * FS
 
 
 def estimate(method, meas, pulse, m):
-    meas = np.asarray(meas, dtype=np.float64)
-    if method == "delay_xcorr":
+    if method == "delay_xcorr (plain)":
         return delay_xcorr(pulse, meas, fs=FS) * FS
-    if method == "delay_gcc_phat":
+    if method == "delay_xcorr (masked)":
+        return xcorr_masked(meas, pulse, FS) * FS
+    if method == "delay_gcc_phat (plain)":
         return delay_gcc_phat(pulse, meas, fs=FS) * FS
+    if method == "delay_gcc_phat (masked)":
+        return gcc_masked(meas, pulse, FS) * FS
     if method == "delay_pipeline":
-        return delay_pipeline(meas, pulse, fs=FS, T=m["T"], P=m["P"], mu=MU, order=1, skip=18).delay_s * FS
-    den = np.asarray(apply_wavelet_denoising(meas), dtype=np.float64)
+        return delay_pipeline(meas, pulse, fs=FS, T=m["T"], P=m["P"], mu=MU, order=1,
+                              skip=SKIP_MASK).delay_s * FS
     if method == "nlms-peak":
+        den = np.asarray(apply_wavelet_denoising(meas), dtype=np.float64)
         residual = np.asarray(nlms_filter(pulse, den, mu=MU, order=1), dtype=np.float64)
-    else:
-        residual = np.asarray(simple_lms(den, pulse, mu=MU), dtype=np.float64)
-    zone = np.abs(residual[SKIP_LEGACY:])
-    peak = int(np.argmax(zone)) + SKIP_LEGACY
-    ref_peak = int(np.argmax(np.abs(pulse)))
-    return float(peak - ref_peak)
+    else:  # legacy
+        _, residual, _ = legacy_pipeline(meas, pulse, mu=MU, skip=SKIP_MASK)
+        residual = np.asarray(residual, dtype=np.float64)
+    return _peak_interp(residual, FS, SKIP_MASK, int(np.argmax(np.abs(pulse)))) * FS
 
 
+# -------------------------------------------------------------- diagnostics
+def classify(method, meas, pulse, true_samp):
+    """Classify the picked lag relative to the true echo (direct lobe/sidelobe/other)."""
+    ref = pulse - pulse.mean()
+    dl = meas - meas.mean()
+    support = int(np.where(np.abs(pulse) >= 0.05 * np.abs(pulse).max())[0].max())
+    est = estimate(method, meas, pulse, {"T": 45.0, "P": 50.0})
+    if not np.isfinite(est):
+        return "non-finite", est
+    err = est - true_samp
+    if abs(err) <= 1.0:
+        return "correct", est
+    if est <= support:
+        return "direct-pulse lobe", est
+    if abs(err) <= 2.0 * support:
+        return "sidelobe", est
+    return "other (window-edge/DC leakage)", est
+
+
+# ------------------------------------------------------------ tuning (ablation)
+def tune_thresholds():
+    """Pick a soft-threshold scale per wavelet level on a SEPARATE tuning seed."""
+    rng = np.random.RandomState(TUNE_SEED)
+    samples = []
+    for req in ABL_GRID:
+        samples += [build_sample(rng, shift=False, echo_snr_db=float(req)) for _ in range(80)]
+    tuned = {}
+    for level in (1, 2, 3):
+        best, best_err = None, np.inf
+        for scale in TUNE_SCALES:
+            errs = []
+            for s in samples:
+                m = s["meta"]
+                true = 2.0 * m["x_b"] / m["c"] * FS
+                e = est_abl("wavelet L%d (tuned)" % level, s["x"].astype(np.float64),
+                            s["pulse"].astype(np.float64), {level: scale}) - true
+                errs.append(e)
+            rmse = float(np.sqrt(np.mean(np.array(errs) ** 2)))
+            if rmse < best_err:
+                best, best_err = scale, rmse
+        tuned[level] = best
+    return tuned
+
+
+# ------------------------------------------------------------------ reporting
 def _rmse_ci(err_samp, n=1000, alpha=0.95):
     rng = np.random.RandomState(7)
     if err_samp.size == 0:
@@ -69,62 +234,114 @@ def _rmse_ci(err_samp, n=1000, alpha=0.95):
             float(np.percentile(boot, (1 + alpha) / 2 * 100)))
 
 
+def _row(req, method, err_samp, err_m, nonfinite):
+    lo, hi = _rmse_ci(err_samp)
+    return {
+        "echo_snr_db": float(req), "method": method, "n": N_CELL,
+        "rmse_samples": (float(np.sqrt(np.mean(err_samp ** 2))) if err_samp.size else np.nan),
+        "rmse_metres": (float(np.sqrt(np.mean(err_m ** 2))) if err_m.size else np.nan),
+        "rmse_ci_low_samples": lo, "rmse_ci_high_samples": hi,
+        "median_abs_err_samples": (float(np.median(np.abs(err_samp))) if err_samp.size else np.nan),
+        "median_abs_err_metres": (float(np.median(np.abs(err_m))) if err_m.size else np.nan),
+        "failure_rate": float(nonfinite) / N_CELL,
+    }
+
+
 def run():
     common.style()
+    os.makedirs(OUT_DIR, exist_ok=True)
+    tuned = tune_thresholds()
+    print("tuned soft-threshold scales (separate tuning seed %d): %s" % (TUNE_SEED, tuned))
+
+    print("\ncall paths (module.function, key params):")
+    for name, path in CALL_PATHS:
+        print("  %-24s %s" % (name, path))
+
     rng = np.random.RandomState(SEED)
+    cells = {req: [build_sample(rng, shift=False, echo_snr_db=float(req)) for _ in range(N_CELL)]
+             for req in GRID}
+    tuned_cache = tuned
     rows = []
     for req in GRID:
-        samples = [build_sample(rng, shift=False, echo_snr_db=float(req)) for _ in range(N_CELL)]
-        for method in METHODS:
-            err_samp, err_m = [], []
-            nonfinite = 0
-            for s in samples:
+        for method in MAIN_METHODS:
+            err_samp, err_m, nonfinite = [], [], 0
+            for s in cells[req]:
                 m = s["meta"]
-                meas = s["x"].astype(np.float64)
-                pulse = s["pulse"].astype(np.float64)
-                true_samp = 2.0 * m["x_b"] / m["c"] * FS
+                meas, pulse = s["x"].astype(np.float64), s["pulse"].astype(np.float64)
+                true = 2.0 * m["x_b"] / m["c"] * FS
                 est = estimate(method, meas, pulse, m)
                 if not np.isfinite(est):
                     nonfinite += 1
                     continue
-                e = est - true_samp
-                err_samp.append(e)
-                err_m.append(e * m["c"] / FS)
-            err_samp = np.array(err_samp)
-            err_m = np.array(err_m)
-            lo, hi = _rmse_ci(err_samp)
-            rows.append({
-                "echo_snr_db": float(req), "method": method, "n": N_CELL,
-                "rmse_samples": (float(np.sqrt(np.mean(err_samp ** 2))) if err_samp.size else np.nan),
-                "rmse_metres": (float(np.sqrt(np.mean(err_m ** 2))) if err_m.size else np.nan),
-                "rmse_ci_low_samples": lo, "rmse_ci_high_samples": hi,
-                "median_abs_err_samples": (float(np.median(np.abs(err_samp))) if err_samp.size else np.nan),
-                "median_abs_err_metres": (float(np.median(np.abs(err_m))) if err_m.size else np.nan),
-                "failure_rate": float(nonfinite) / N_CELL,
-            })
+                err_samp.append(est - true)
+                err_m.append((est - true) * m["c"] / FS)
+            rows.append(_row(req, method, np.array(err_samp), np.array(err_m), nonfinite))
+        if req in ABL_GRID:
+            for method in ABL_METHODS:
+                err_samp, err_m, nonfinite = [], [], 0
+                for s in cells[req]:
+                    m = s["meta"]
+                    meas, pulse = s["x"].astype(np.float64), s["pulse"].astype(np.float64)
+                    true = 2.0 * m["x_b"] / m["c"] * FS
+                    est = est_abl(method, meas, pulse, tuned_cache)
+                    if not np.isfinite(est):
+                        nonfinite += 1
+                        continue
+                    err_samp.append(est - true)
+                    err_m.append((est - true) * m["c"] / FS)
+                rows.append(_row(req, method, np.array(err_samp), np.array(err_m), nonfinite))
+
     hdr = ["echo_snr_db", "method", "n", "rmse_samples", "rmse_metres",
            "rmse_ci_low_samples", "rmse_ci_high_samples",
            "median_abs_err_samples", "median_abs_err_metres", "failure_rate"]
     common.save_csv(os.path.join(OUT_DIR, "e3_table.csv"), rows, hdr)
 
+    # ---- +25 dB failure classification ----
+    print("\n+25 dB failure classification (xcorr / gcc, plain vs masked):")
+    for method in ("delay_xcorr (plain)", "delay_xcorr (masked)",
+                   "delay_gcc_phat (plain)", "delay_gcc_phat (masked)"):
+        counts = {}
+        for s in cells[25.0]:
+            m = s["meta"]
+            true = 2.0 * m["x_b"] / m["c"] * FS
+            cls, _ = classify(method, s["x"].astype(np.float64), s["pulse"].astype(np.float64), true)
+            counts[cls] = counts.get(cls, 0) + 1
+        print("  %-24s %s" % (method, counts))
+
+    # ---- figure: main methods ----
     fig, ax = plt.subplots(figsize=(8.5 / 2.54, 6 / 2.54))
-    for k, method in enumerate(METHODS):
+    plot_methods = ("delay_xcorr (masked)", "delay_gcc_phat (masked)", "delay_pipeline",
+                    "nlms-peak", LEGACY)
+    for k, method in enumerate(plot_methods):
         sub = [r for r in rows if r["method"] == method]
         x = [r["echo_snr_db"] for r in sub]
         y = [max(r["rmse_samples"], 1e-2) for r in sub]
         ax.semilogy(x, y, "o-", color=common.PALETTE[k], label=method.split(" ")[0])
     ax.set_xlabel("echo SNR (dB)"); ax.set_ylabel("delay RMSE (samples)")
-    ax.set_title("E3: delay estimation RMSE vs echo SNR (log-y)")
+    ax.set_title("E3: delay RMSE vs echo SNR (masked, log-y)")
     ax.legend(fontsize=6)
     stem = common.save_fig(fig, os.path.join(OUT_DIR, "e3_rmse_vs_snr"), width_cm=8.5)
-    print("echo_snr  " + "".join(f"{m.split(' ')[0]:>13s}" for m in METHODS))
+
+    # ---- compact print ----
+    print("\nmain methods, RMSE (samples):")
+    print("echo_snr  " + "".join(f"{m.split(' ')[0][:10]:>12s}" for m in MAIN_METHODS))
     for req in GRID:
         line = f"{req:>+7.1f}  "
-        for method in METHODS:
+        for method in MAIN_METHODS:
+            r = next(x for x in rows if x["echo_snr_db"] == req and x["method"] == method)
+            line += f"{r['rmse_samples']:>12.2f}"
+        print(line)
+
+    print("\ndenoising ablation, RMSE (samples):")
+    print("echo_snr  " + "".join(f"{m.split(' ')[0][:11]:>13s}" for m in ABL_METHODS))
+    for req in ABL_GRID:
+        line = f"{req:>+7.1f}  "
+        for method in ABL_METHODS:
             r = next(x for x in rows if x["echo_snr_db"] == req and x["method"] == method)
             line += f"{r['rmse_samples']:>13.2f}"
         print(line)
-    print(f"wrote {os.path.join(OUT_DIR, 'e3_table.csv')} ; {stem}.png/.pdf")
+
+    print(f"\nwrote {os.path.join(OUT_DIR, 'e3_table.csv')} ; {stem}.png/.pdf")
     return rows
 
 
