@@ -1,5 +1,7 @@
 {
-  "epochs_cap": 30,
+  "variant": "per-sample RMS + train-std env",
+  "epochs_cap": 20,
+  "lr": 0.001,
   "patience": 5,
   "batch": 64,
   "seeds": [
@@ -7,7 +9,21 @@
     1,
     2
   ],
+  "env_stats": {
+    "mean": [
+      0.4572126582612594,
+      0.4522353280484676,
+      0.5800971806844075
+    ],
+    "std": [
+      0.16784113309425486,
+      0.14441448261232676,
+      0.24031361897020997
+    ]
+  },
   "circularity": "physics-trained model evaluated on physics-simulated data",
+  "e3_skip_mask": 24,
+  "v1_table": "e4_metrics_v1.csv",
   "version": {
     "python": "3.12.15",
     "platform": "Windows-10-10.0.19045-SP0",

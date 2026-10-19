@@ -58,7 +58,7 @@ def negloglik(y_true, y_pred):
 
 
 def build_sovereign_model(
-    input_shape_acoustic=(500, 1), input_shape_env=(3,), run_eagerly=False
+    input_shape_acoustic=(500, 1), input_shape_env=(3,), run_eagerly=False, lr=None
 ):
     """Build and compile the sovereign Bayesian decision model.
 
@@ -73,6 +73,8 @@ def build_sovereign_model(
         input_shape_env (tuple): Shape of the environmental context input.
         run_eagerly (bool): Compile-time execution mode override (mainly for
             the equivalence test).
+        lr (float, optional): Adam learning rate. ``None`` keeps the Keras
+            default (1e-3); the E4 v2 hyper-parameter search sets this.
 
     Returns:
         tf.keras.Model: Compiled dual-input Bayesian model.
@@ -97,7 +99,11 @@ def build_sovereign_model(
     sovereign_output = SovereignBayesianLayer(name="Bayesian_Output")(params)
 
     model = models.Model(inputs=[acoustic_input, env_input], outputs=sovereign_output)
-    model.compile(optimizer="adam", loss=negloglik, run_eagerly=run_eagerly)
+    if lr is None:
+        optimizer = "adam"
+    else:
+        optimizer = keras.optimizers.Adam(learning_rate=float(lr))
+    model.compile(optimizer=optimizer, loss=negloglik, run_eagerly=run_eagerly)
     return model
 
 

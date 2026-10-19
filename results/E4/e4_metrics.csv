@@ -1,45 +1,45 @@
-train_set,test_set,seed,output,mae_m,nll,cov50,cov80,cov90,mean_width,train_time_s
-mean-predictor,test_id,-,severity,,-0.04385,0.397,0.729,0.958,0.587451,
-mean-predictor,test_id,-,location,13.128761,0.037757,0.378,0.75,0.948,38.576908,
-mean-predictor,test_id,-,quality,,0.005838,0.413,0.743,0.946,0.630661,
-mean-predictor,test_shift,-,severity,,-0.038386,0.371,0.725,0.937,0.587451,
-mean-predictor,test_shift,-,location,12.491279,0.003284,0.416,0.769,0.962,38.576908,
-mean-predictor,test_shift,-,quality,,0.707879,0.044,0.383,0.605,0.630661,
-random-target,test_id,0,severity,,0.531666,0.707,0.934,0.997,1.62573,27.672
-random-target,test_id,0,location,16.76738,0.404592,0.658,0.986,0.999,83.481522,27.672
-random-target,test_id,0,quality,,0.407976,0.67,0.974,0.99,1.312637,27.672
-random-target,test_shift,0,severity,,1.092699,0.753,0.958,0.998,5.619537,27.672
-random-target,test_shift,0,location,49.420956,0.942406,0.694,0.961,0.984,226.322098,27.672
-random-target,test_shift,0,quality,,1.044876,0.567,0.903,0.945,2.913559,27.672
-physics-target,test_id,0,severity,,0.458224,0.63,0.932,0.995,1.543012,26.579
-physics-target,test_id,0,location,25.011965,0.523598,0.662,0.948,0.98,92.756523,26.579
-physics-target,test_id,0,quality,,0.357324,0.78,0.974,0.986,1.318858,26.579
-physics-target,test_shift,0,severity,,1.080858,0.732,0.968,0.997,6.579162,26.579
-physics-target,test_shift,0,location,188.283539,1.463706,0.516,0.785,0.859,324.763,26.579
-physics-target,test_shift,0,quality,,1.30925,0.582,0.861,0.907,3.392477,26.579
-random-target,test_id,1,severity,,0.36904,0.623,0.914,0.993,1.276328,64.025
-random-target,test_id,1,location,15.463045,0.365793,0.653,0.956,0.994,77.369888,64.025
-random-target,test_id,1,quality,,0.325115,0.654,0.982,0.999,1.270877,64.025
-random-target,test_shift,1,severity,,0.888668,0.695,0.953,0.995,4.131517,64.025
-random-target,test_shift,1,location,45.825405,0.906887,0.689,0.96,0.998,245.398972,64.025
-random-target,test_shift,1,quality,,0.980029,0.469,0.814,0.941,2.608511,64.025
-physics-target,test_id,1,severity,,0.377893,0.617,0.896,0.986,1.479784,40.009
-physics-target,test_id,1,location,15.656351,0.398464,0.713,0.988,1.0,91.2062,40.009
-physics-target,test_id,1,quality,,0.43496,0.67,0.917,0.972,1.374469,40.009
-physics-target,test_shift,1,severity,,1.119579,0.673,0.924,0.985,7.211236,40.009
-physics-target,test_shift,1,location,81.111481,1.120044,0.618,0.926,0.965,265.598602,40.009
-physics-target,test_shift,1,quality,,1.461251,0.337,0.682,0.848,3.808282,40.009
-random-target,test_id,2,severity,,0.107954,0.516,0.911,0.979,0.828023,89.565
-random-target,test_id,2,location,13.82905,0.140736,0.484,0.867,0.968,49.010017,89.565
-random-target,test_id,2,quality,,0.255372,0.467,0.772,0.911,0.82696,89.565
-random-target,test_shift,2,severity,,0.365111,0.51,0.878,0.945,1.084293,89.565
-random-target,test_shift,2,location,28.462536,3.344283,0.441,0.796,0.885,57.083805,89.565
-random-target,test_shift,2,quality,,0.660478,0.477,0.84,0.934,1.059021,89.565
-physics-target,test_id,2,severity,,-0.058751,0.512,0.837,0.966,0.666341,95.851
-physics-target,test_id,2,location,10.627479,0.032241,0.507,0.842,0.954,38.77766,95.851
-physics-target,test_id,2,quality,,5.343084,0.661,0.906,0.966,0.512719,95.851
-physics-target,test_shift,2,severity,,0.77182,0.447,0.777,0.885,1.053966,95.851
-physics-target,test_shift,2,location,25.41843,1.064497,0.437,0.73,0.875,58.144325,95.851
-physics-target,test_shift,2,quality,,0.326952,0.456,0.762,0.887,1.135992,95.851
-E3 full-pipeline,test_id,,location,9.126075,,,,,,
-E3 full-pipeline,test_shift,,location,21.92038,,,,,,
+variant,train_set,test_set,seed,output,mae_m,nll,cov50,cov80,cov90,mean_width,train_time_s
+per-sample RMS + train-std env,mean-predictor,test_id,-,severity,,-0.04385,0.397,0.729,0.958,0.587451,
+per-sample RMS + train-std env,mean-predictor,test_id,-,location,13.128761,0.037757,0.378,0.75,0.948,38.576908,
+per-sample RMS + train-std env,mean-predictor,test_id,-,quality,,0.005838,0.413,0.743,0.946,0.630661,
+per-sample RMS + train-std env,mean-predictor,test_shift,-,severity,,-0.038386,0.371,0.725,0.937,0.587451,
+per-sample RMS + train-std env,mean-predictor,test_shift,-,location,12.491279,0.003284,0.416,0.769,0.962,38.576908,
+per-sample RMS + train-std env,mean-predictor,test_shift,-,quality,,0.707879,0.044,0.383,0.605,0.630661,
+per-sample RMS + train-std env,random-target,test_id,0,severity,,0.115672,0.482,0.871,0.968,0.79761,31.688
+per-sample RMS + train-std env,random-target,test_id,0,location,15.020977,0.214809,0.429,0.77,0.908,46.871212,31.688
+per-sample RMS + train-std env,random-target,test_id,0,quality,,0.054775,0.61,0.887,0.995,0.812123,31.688
+per-sample RMS + train-std env,random-target,test_shift,0,severity,,0.885003,0.409,0.67,0.794,1.03209,31.688
+per-sample RMS + train-std env,random-target,test_shift,0,location,28.114365,1.083621,0.402,0.656,0.766,61.221882,31.688
+per-sample RMS + train-std env,random-target,test_shift,0,quality,,0.806921,0.463,0.708,0.811,0.968906,31.688
+per-sample RMS + train-std env,physics-target,test_id,0,severity,,-0.424241,0.422,0.707,0.823,0.283145,48.403
+per-sample RMS + train-std env,physics-target,test_id,0,location,6.094626,-0.485913,0.588,0.803,0.858,18.810455,48.403
+per-sample RMS + train-std env,physics-target,test_id,0,quality,,-1.537292,0.495,0.858,0.952,0.151193,48.403
+per-sample RMS + train-std env,physics-target,test_shift,0,severity,,25.754472,0.073,0.136,0.18,0.318788,48.403
+per-sample RMS + train-std env,physics-target,test_shift,0,location,26.739813,3.190764,0.193,0.349,0.444,31.411844,48.403
+per-sample RMS + train-std env,physics-target,test_shift,0,quality,,3.915738,0.101,0.195,0.257,0.222958,48.403
+per-sample RMS + train-std env,random-target,test_id,1,severity,,0.204357,0.497,0.836,0.952,0.837907,35.803
+per-sample RMS + train-std env,random-target,test_id,1,location,14.549822,0.179023,0.452,0.83,0.954,48.178577,35.803
+per-sample RMS + train-std env,random-target,test_id,1,quality,,0.152906,0.535,0.811,0.941,0.797849,35.803
+per-sample RMS + train-std env,random-target,test_shift,1,severity,,1.530655,0.299,0.522,0.634,0.793793,35.803
+per-sample RMS + train-std env,random-target,test_shift,1,location,20.273106,1.104332,0.294,0.533,0.646,37.527195,35.803
+per-sample RMS + train-std env,random-target,test_shift,1,quality,,1.416844,0.326,0.552,0.654,0.661789,35.803
+per-sample RMS + train-std env,physics-target,test_id,1,severity,,-0.454346,0.545,0.795,0.88,0.373623,35.84
+per-sample RMS + train-std env,physics-target,test_id,1,location,6.375716,-0.509888,0.584,0.837,0.891,21.891912,35.84
+per-sample RMS + train-std env,physics-target,test_id,1,quality,,-1.353577,0.801,0.973,0.998,0.232478,35.84
+per-sample RMS + train-std env,physics-target,test_shift,1,severity,,1.352077,0.28,0.504,0.622,0.827628,35.84
+per-sample RMS + train-std env,physics-target,test_shift,1,location,22.232231,1.212787,0.255,0.513,0.638,38.828014,35.84
+per-sample RMS + train-std env,physics-target,test_shift,1,quality,,1.578515,0.117,0.271,0.395,0.452391,35.84
+per-sample RMS + train-std env,random-target,test_id,2,severity,,0.051554,0.482,0.888,0.967,0.751063,35.833
+per-sample RMS + train-std env,random-target,test_id,2,location,14.48993,0.156957,0.438,0.816,0.966,46.83783,35.833
+per-sample RMS + train-std env,random-target,test_id,2,quality,,0.033092,0.533,0.912,0.987,0.768944,35.833
+per-sample RMS + train-std env,random-target,test_shift,2,severity,,2.061199,0.28,0.487,0.587,0.676224,35.833
+per-sample RMS + train-std env,random-target,test_shift,2,location,23.106215,0.993166,0.36,0.601,0.734,48.916477,35.833
+per-sample RMS + train-std env,random-target,test_shift,2,quality,,1.201162,0.314,0.576,0.69,0.830142,35.833
+per-sample RMS + train-std env,physics-target,test_id,2,severity,,-0.364366,0.485,0.741,0.833,0.331929,47.258
+per-sample RMS + train-std env,physics-target,test_id,2,location,6.820327,-0.500104,0.487,0.784,0.888,20.568386,47.258
+per-sample RMS + train-std env,physics-target,test_id,2,quality,,-1.444114,0.643,0.939,0.994,0.189752,47.258
+per-sample RMS + train-std env,physics-target,test_shift,2,severity,,1.004705,0.309,0.526,0.628,0.591099,47.258
+per-sample RMS + train-std env,physics-target,test_shift,2,location,21.886118,1.387057,0.282,0.516,0.613,37.130135,47.258
+per-sample RMS + train-std env,physics-target,test_shift,2,quality,,3.922217,0.081,0.172,0.237,0.344824,47.258
+per-sample RMS + train-std env,E3 full-pipeline,test_id,,location,7.055925,,,,,,
+per-sample RMS + train-std env,E3 full-pipeline,test_shift,,location,21.555738,,,,,,

@@ -19,9 +19,10 @@ def load_split(key):
         return z["X"], z["env"], z["y"]
 
 
-def train_sovereign(X, E, y, epochs=30, patience=5, batch=64, seed=0, run_eagerly=False):
+def train_sovereign(X, E, y, epochs=30, patience=5, batch=64, seed=0, run_eagerly=False,
+                    lr=None, val=None):
     tf.keras.utils.set_random_seed(seed)
-    model = build_sovereign_model(run_eagerly=run_eagerly)
+    model = build_sovereign_model(run_eagerly=run_eagerly, lr=lr)
     cb = tf.keras.callbacks.EarlyStopping(
         monitor="val_loss", patience=patience, restore_best_weights=True
     )
@@ -29,15 +30,19 @@ def train_sovereign(X, E, y, epochs=30, patience=5, batch=64, seed=0, run_eagerl
         t0 = tf.timestamp()
     except Exception:
         t0 = 0.0
+    if val is not None:
+        fit_kwargs = {"validation_data": ([val[0], val[1]], val[2])}
+    else:
+        fit_kwargs = {"validation_split": 0.1}
     hist = model.fit(
         [X, E],
         y,
         epochs=epochs,
         batch_size=batch,
         shuffle=False,
-        validation_split=0.1,
         callbacks=[cb],
         verbose=0,
+        **fit_kwargs,
     )
     try:
         t1 = tf.timestamp()
