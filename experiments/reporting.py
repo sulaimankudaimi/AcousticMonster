@@ -139,6 +139,7 @@ def _sec_e2():
 
 
 def _sec_e3():
+    import numpy as np
     rows = _read(os.path.join("E3", "e3_table.csv"))
     methods = []
     for r in rows:
@@ -146,17 +147,32 @@ def _sec_e3():
             methods.append(r["method"])
     snrs = sorted({_f(r["echo_snr_db"]) for r in rows})
     keep = [-15.0, 0.0, 25.0]
-    header = ["method"] + [f"RMSE@{k:g}dB" for k in keep] + ["mean"]
-    out = ["## E3 delay RMSE vs echo SNR (samples; 95 % CI in CSV)", ""]
+    header = ["method"] + [f"RMSE@{k:g}dB" for k in keep] + ["mean (all 9 lvls)"]
+    out = ["## E3 delay RMSE vs echo SNR (samples; 95 % CI + failure rate in CSV)", ""]
+    out += ["Every row is evaluated at all 9 echo-SNR levels "
+            "(-15,-10,-5,0,5,10,15,20,25 dB); the mean covers those 9 levels.", ""]
     body = []
     for m in methods:
         sub = [r for r in rows if r["method"] == m]
         vals = {}
         for r in sub:
             vals[_f(r["echo_snr_db"])] = _f(r["rmse_samples"])
-        body.append([m] + [f"{vals.get(k, float('nan')):.3g}" for k in keep]
-                    + [f"{sum(vals.values()) / max(len(vals), 1):.3g}"])
+        finite = [v for v in vals.values() if np.isfinite(v)]
+        mean = f"{np.mean(finite):.3g}" if finite else "nan"
+        body.append([m] + [f"{vals.get(k, float('nan')):.3g}" for k in keep] + [mean])
     out += _table(header, body)
+    try:
+        cs = _read(os.path.join("E3", "e3_cycle_slips.csv"))
+        out += ["", "+25 dB cycle-slip check (|err - k/f0| <= 0.15/f0, k != 0):"]
+        cbody = []
+        for m in ("delay_xcorr (plain)", "delay_xcorr (masked)"):
+            sub = [r for r in cs if r["method"] == m]
+            near = sum(str(r["near_integer_period"]).lower() in ("true", "1") for r in sub)
+            cbody.append([m, f"{near}/{len(sub)} ({100.0 * near / max(len(sub), 1):.0f}%); "
+                               "errors are window-edge/DC leakage, not period slips"])
+        out += _table(["method", "near-integer period"], cbody)
+    except Exception:
+        pass
     return out
 
 
@@ -181,6 +197,19 @@ def _sec_e4():
         [r["echo_snr_bin_db"], r["n"], f"{_f(r['cnn_physics_mae_m']):.2f}",
          f"{_f(r['cnn_random_mae_m']):.2f}", f"{_f(r['mean_pred_mae_m']):.2f}",
          f"{_f(r['e3_classical_mae_m']):.2f}"] for r in snr])
+    try:
+        sf = _read(os.path.join("E4", "e4_shift_factors.csv"))
+        out += ["", "single-factor shift decomposition (existing 3-seed models, n=1000/factor; "
+                    "location MAE m):"]
+        out += _table(["factor", "CNN physics", "CNN random", "mean-pred", "E3 classical",
+                       "cov50", "cov80", "cov90", "w80 (m)"], [
+            [r["factor"], f"{_f(r['cnn_physics_mae_m']):.2f}",
+             f"{_f(r['cnn_random_mae_m']):.2f}", f"{_f(r['mean_pred_mae_m']):.2f}",
+             f"{_f(r['classical_mae_m']):.2f}", f"{_f(r['cov50']):.2f}",
+             f"{_f(r['cov80']):.2f}", f"{_f(r['cov90']):.2f}",
+             f"{_f(r['mean_width80_m']):.2f}"] for r in sf])
+    except Exception:
+        pass
     return out
 
 

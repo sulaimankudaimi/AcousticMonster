@@ -103,6 +103,8 @@ def build_sample(
     shift: bool = False,
     snr_db: Optional[float] = None,
     echo_snr_db: Optional[float] = None,
+    ranges: Optional[Dict[str, tuple]] = None,
+    impulsive: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Generate one pulse-echo measurement and all its targets/metadata.
 
@@ -120,7 +122,10 @@ def build_sample(
     used, ``meta["snr_db"]`` holds the *achieved total SNR*, i.e. the
     mapping echo-snr -> total-snr for that sample.
     """
-    r = SHIFT if shift else BASE
+    r = dict(SHIFT if shift else BASE)
+    if ranges:
+        r.update(ranges)
+    use_bursts = bool(shift) if impulsive is None else bool(impulsive)
     T = float(rng.uniform(*r["T"]))
     P = float(rng.uniform(*r["P"]))
     v = float(rng.uniform(*r["v"]))
@@ -153,7 +158,7 @@ def build_sample(
         target_std = np.sqrt(np.mean(clean ** 2)) / np.sqrt(10.0 ** (snr_db / 10.0))
     noise = noise * target_std
 
-    if shift:  # impulsive bursts on top of the scaled background
+    if use_bursts:  # impulsive bursts on top of the scaled background
         bursts = _unit_noise(rng, impulsive=True) * target_std * 3.0
         noise = noise + bursts
 
@@ -204,6 +209,8 @@ def build_split(
     shift: bool = False,
     snr_db: Optional[float] = None,
     echo_snr_db: Optional[float] = None,
+    ranges: Optional[Dict[str, tuple]] = None,
+    impulsive: Optional[bool] = None,
 ) -> Dict[str, np.ndarray]:
     """Build a complete split of ``n`` deterministic samples (seeded).
 
@@ -223,7 +230,8 @@ def build_split(
     env = np.empty((n, 3), dtype=np.float32)
     y = np.empty((n, 3), dtype=np.float32)
     for i in range(n):
-        s = build_sample(rng, shift=shift, snr_db=snr_db, echo_snr_db=echo_snr_db)
+        s = build_sample(rng, shift=shift, snr_db=snr_db, echo_snr_db=echo_snr_db,
+                         ranges=ranges, impulsive=impulsive)
         X[i, :, 0] = s["x"]
         env[i, :] = s["env"]
         y[i, :] = s["y"]

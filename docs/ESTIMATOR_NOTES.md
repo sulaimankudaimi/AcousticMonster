@@ -37,3 +37,12 @@
    amplitude cannot make it diverge; only the amplitude of the reference
    (the filter input `x`) can. Mitigation is on the reference side, e.g.
    normalizing the reference gain.
+
+## Why E3 `delay_pipeline` at 0 dB went 16.04 -> 0.742 samples
+- Pre-audit it searched the whole residual for the amplitude peak, so the
+  direct-pulse/denoise-edge remnant (whose level is independent of echo SNR)
+  outranked the echo at 0 dB and biased the lag by ~16 samples.
+- The audit masked the direct-pulse region (`skip=24`), denoised the reference
+  with the same wavelet operator, and scored echo-peak minus reference-peak;
+  the echo then wins, so RMSE at 0 dB is 0.742 samples.
+- Not a metric change: same true delay, same seeds, same 300 cells.

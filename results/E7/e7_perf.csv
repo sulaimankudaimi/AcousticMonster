@@ -1,3 +1,3 @@
 run_eagerly,per_epoch_s_mean,per_epoch_s_std,infer_ms_median,infer_ms_iqr,repeats,timed_runs
-False,0.5711,0.0042,8.1716,0.2841,3,100
-True,0.9257,0.004,8.1461,0.2806,3,100
+False,0.3771,0.0048,5.9945,1.2281,3,100
+True,0.7772,0.0057,5.88,1.0002,3,100

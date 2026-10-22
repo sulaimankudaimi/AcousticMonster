@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 
 from experiments import common
 from src.signal_core import delay_pipeline
-from src.synth.generator import FS, make_pulse
+from src.synth.generator import FS, SHIFT, build_split, make_pulse
 from src.train_sovereign import SEEDS, load_split, predict_sovereign_dist, train_sovereign
 
 common.style()
@@ -48,6 +48,15 @@ QUICK_EPOCHS = 2
 SKIP_E3 = 24  # unified E3 direct-pulse skip mask (E3 audit)
 SEED_RNG = 20240
 V1_CSV = os.path.join(OUT_DIR, "e4_metrics_v1.csv")
+SHIFT_N = 1000
+SHIFT_SEED = 9090
+SHIFT_FACTORS = (
+    ("T/P range only", {"T": SHIFT["T"], "P": SHIFT["P"]}, False),
+    ("SNR range only", {"snr_db": SHIFT["snr_db"]}, False),
+    ("noise type only", {}, True),
+    ("f0 +-30% only", {"f0": SHIFT["f0"]}, False),
+    ("attenuation only", {"alpha": SHIFT["alpha"]}, False),
+)
 
 
 def _z(p):
@@ -114,6 +123,63 @@ def mean_predictor_metrics(train_Y, y):
     return per_output_metrics(loc, scale, y), loc
 
 
+def shift_decomposition(models, env_mean, env_std, train_y, seeds, out_dir=OUT_DIR):
+    """Evaluate the ALREADY-TRAINED v2 models on single-factor shift sets.
+
+    No retraining: the models live in memory from the main E4 loop. Each set
+    changes exactly one factor of the distribution-shift split (T/P, SNR,
+    noise type, f0, attenuation) while all other ranges stay at BASE.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    target = ("physics-target", "random-target")
+    rows = []
+    mp_loc = np.tile(train_y.mean(axis=0), (SHIFT_N, 1))
+    for fi, (label, ranges, impulsive) in enumerate(SHIFT_FACTORS):
+        d = build_split("shift_factor_%d" % fi, SHIFT_N, SHIFT_SEED + fi,
+                        shift=False, ranges=ranges, impulsive=impulsive)
+        X, E, y = d["X"], d["env"], d["y"]
+        true_m = y[:, 1] * 60.0
+        meta = {k: d[k] for k in ("T", "P", "f0")}
+        preds = classical_predictions(X, meta)
+        c_mae = float(np.nanmean(np.abs(preds - true_m)))
+        c_fail = float(np.mean(~np.isfinite(preds)))
+        mp_mae = float(np.mean(np.abs(mp_loc[:, 1] * 60.0 - true_m)))
+        Xn = rms_normalise(X)
+        En = apply_env_stats(E, env_mean, env_std)
+        per_tt = {tt: [] for tt in target}
+        cov = {p: [] for p in REPORT_LEVELS}
+        wid = {p: [] for p in REPORT_LEVELS}
+        for seed in seeds:
+            for tt in target:
+                loc, scale = predict_sovereign_dist(models[(seed, tt)], Xn, En)
+                per_tt[tt].append(float(np.mean(np.abs(loc[:, 1] * 60.0 - true_m))))
+                if tt == "physics-target":
+                    for p in REPORT_LEVELS:
+                        cov[p].append(float(np.mean(np.abs(y[:, 1] - loc[:, 1]) <= _z(p) * scale[:, 1])))
+                        wid[p].append(float(np.mean(2.0 * _z(p) * scale[:, 1] * 60.0)))
+        row = {
+            "factor": label, "n": SHIFT_N,
+            "cnn_physics_mae_m": float(np.mean(per_tt["physics-target"])),
+            "cnn_random_mae_m": float(np.mean(per_tt["random-target"])),
+            "mean_pred_mae_m": mp_mae,
+            "classical_mae_m": c_mae,
+            "classical_failure_rate": c_fail,
+            "cov50": float(np.mean(cov[0.5])), "cov80": float(np.mean(cov[0.8])),
+            "cov90": float(np.mean(cov[0.9])),
+            "mean_width80_m": float(np.mean(wid[0.8])),
+        }
+        rows.append(row)
+        print("  shift %-18s phys=%.2f rand=%.2f mp=%.2f classical=%.2f "
+              "cov80=%.2f width80=%.2f" % (label, row["cnn_physics_mae_m"],
+                                           row["cnn_random_mae_m"], mp_mae, c_mae,
+                                           row["cov80"], row["mean_width80_m"]), flush=True)
+    hdr = ["factor", "n", "cnn_physics_mae_m", "cnn_random_mae_m", "mean_pred_mae_m",
+           "classical_mae_m", "classical_failure_rate", "cov50", "cov80", "cov90",
+           "mean_width80_m"]
+    common.save_csv(os.path.join(out_dir, "e4_shift_factors.csv"), rows, hdr)
+    return rows
+
+
 # --------------------------------------------------------------------- tuning
 def tune_hyperparams(base, trainY, tune_seed=0):
     """Grid-search lr x epoch-cap on the validation split only."""
@@ -137,7 +203,7 @@ def tune_hyperparams(base, trainY, tune_seed=0):
 
 
 # ------------------------------------------------------------------------ run
-def run(epochs=None, seeds=None, tune=True):
+def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
     seeds = seeds or SEEDS
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(TMP_DIR, exist_ok=True)
@@ -177,6 +243,7 @@ def run(epochs=None, seeds=None, tune=True):
     # ---- NN runs ----
     train_times, diag_rows, outside_rows = [], [], []
     hist_store, loc_store = {}, {}
+    models_store = {}
     for seed in seeds:
         for ttype, key in (("random-target", "train_legacy_random_targets"),
                            ("physics-target", "train")):
@@ -187,6 +254,7 @@ def run(epochs=None, seeds=None, tune=True):
             model, hist, dt = train_sovereign(
                 Xn[tr], En[tr], y[tr], epochs=hp["epochs"], seed=seed, lr=hp["lr"],
                 val=(Xn[va], En[va], y[va]))
+            models_store[(seed, ttype)] = model
             epochs_used = len(hist.history["loss"])
             best_val = float(np.min(hist.history["val_loss"]))
             train_times.append({"seed": seed, "target_type": ttype, "epochs_used": epochs_used,
@@ -220,6 +288,11 @@ def run(epochs=None, seeds=None, tune=True):
                                          "output": ["severity", "location", "quality"][d],
                                          "frac_outside_0_1": frac,
                                          "loc_min": float(loc[:, d].min()), "loc_max": float(loc[:, d].max())})
+
+    # ---- single-factor shift decomposition (no retraining) ----
+    if shift_decomp:
+        print("single-factor shift decomposition (existing models, n=%d/factor):" % SHIFT_N, flush=True)
+        shift_decomposition(models_store, env_mean, env_std, trainY, seeds, OUT_DIR)
 
     # ---- SNR-bin table (test_id) ----
     snr_bins = [(-np.inf, -10.0), (-10.0, 0.0), (0.0, 10.0), (10.0, np.inf)]
@@ -261,6 +334,9 @@ def run(epochs=None, seeds=None, tune=True):
                       "lr": hp["lr"], "patience": 5, "batch": 64, "seeds": list(seeds),
                       "env_stats": {"mean": env_mean.tolist(), "std": env_std.tolist()},
                       "circularity": "physics-trained model evaluated on physics-simulated data",
+                      "shift_decomposition": {"n_per_factor": SHIFT_N, "seed": SHIFT_SEED,
+                                              "factors": [f[0] for f in SHIFT_FACTORS],
+                                              "retrained": False},
                       "e3_skip_mask": SKIP_E3,
                       "v1_table": os.path.basename(V1_CSV),
                       "version": common.versions()})

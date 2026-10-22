@@ -79,7 +79,7 @@ def _step_e4(root, quick):
     m.TMP_DIR = _mkdir(os.path.join(root, "tmp", "E4"))
     m.V1_CSV = os.path.join(m.OUT_DIR, "e4_metrics_v1.csv")
     if quick:
-        m.run(epochs=1, seeds=[0], tune=False)
+        m.run(epochs=1, seeds=[0], tune=False, shift_decomp=False)
     else:
         m.run()
 

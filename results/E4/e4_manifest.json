@@ -22,6 +22,18 @@
     ]
   },
   "circularity": "physics-trained model evaluated on physics-simulated data",
+  "shift_decomposition": {
+    "n_per_factor": 1000,
+    "seed": 9090,
+    "factors": [
+      "T/P range only",
+      "SNR range only",
+      "noise type only",
+      "f0 +-30% only",
+      "attenuation only"
+    ],
+    "retrained": false
+  },
   "e3_skip_mask": 24,
   "v1_table": "e4_metrics_v1.csv",
   "version": {
