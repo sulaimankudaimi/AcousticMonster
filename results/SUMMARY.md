@@ -2,8 +2,8 @@
 
 ## Provenance
 
-- git commit: `71a921d09feee97e8f90259da4db4e16ad1764fe` (branch `paper`)
-- generated (UTC): 2026-10-22T19:07:50+00:00
+- git commit: `d9bc04e095a51d09a290e094627c44d2f8e888fa` (branch `paper`)
+- generated (UTC): 2026-10-22T19:09:33+00:00
 - python 3.12.15 | tensorflow 2.21.0 | numpy 2.5.4 | scipy 1.18.1
 - seeds: 0, 1, 2
 - runtimes (s): {"E1": 29.35, "E2-stability": 15.88, "E2-agreement": 1.48, "E3": 69.41, "E4": 317.64, "E5": 25.61, "E6": 0.31, "E7": 23.79}
