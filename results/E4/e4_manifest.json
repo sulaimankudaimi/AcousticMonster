@@ -34,6 +34,15 @@
     ],
     "retrained": false
   },
+  "gate": {
+    "statistic": "peak-to-noise ratio max(|r|)/rms(|r|) of the reference-subtracted NLMS residual in lag window [24, 489]",
+    "threshold": 3.75,
+    "tuned_on": "data/synthetic/val.npz",
+    "val_n": 1000,
+    "objective": "gated location MAE on validation",
+    "fallback_m": 28.852895736694336,
+    "tuning_curve": "e4_gate_tuning.csv"
+  },
   "e3_skip_mask": 24,
   "v1_table": "e4_metrics_v1.csv",
   "version": {

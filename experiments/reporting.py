@@ -138,6 +138,55 @@ def _sec_e2():
     return out
 
 
+def _sec_main():
+    """Short 'main tables for the paper' section (fair E3 + gated classical)."""
+    import numpy as np
+    out = ["## Main tables for the paper", ""]
+    # ---- E3 main table (fair preprocessing) ----
+    try:
+        rows = _read(os.path.join("E3", "e3_main_table.csv"))
+        methods = []
+        for r in rows:
+            if r["method"] not in methods:
+                methods.append(r["method"])
+        snrs = sorted({_f(r["echo_snr_db"]) for r in rows})
+        out += ["### E3 main table (fair preprocessing: demeaned measurement and reference, "
+                "common lag window [24, N-1-10])", "",
+                "Cell = median |err| (samples) / median |err| (m) / failure rate "
+                "(|err| > 5 samples) / RMSE over successful trials (samples); n=300/cell.", ""]
+        body = []
+        for m in methods:
+            cells = []
+            for k in snrs:
+                r = next((x for x in rows if x["method"] == m and _f(x["echo_snr_db"]) == k), None)
+                if r is None:
+                    cells.append("-")
+                    continue
+                cells.append("%.2f/%.3f/%.0f%%/%.2f"
+                             % (_f(r["median_abs_err_samples"]), _f(r["median_abs_err_metres"]),
+                                100 * _f(r["failure_rate_gt5samp"]), _f(r["rmse_success_samples"])))
+            body.append([m] + cells)
+        out += _table(["method"] + [f"{k:g} dB" for k in snrs], body)
+    except Exception as exc:
+        out += [f"(E3 main table unavailable: {exc})"]
+    # ---- E4 gated classical ----
+    try:
+        g = _read(os.path.join("E4", "e4_gated_classical.csv"))
+        out += ["", "### E4 gated classical baseline (E3 classical + PNR gate, "
+                    "threshold tuned on validation only; fallback = train-mean location)", ""]
+        out += _table(["dataset", "n", "pass rate", "gated MAE (m)", "classical MAE (m)",
+                       "train-mean MAE (m)", "CNN phys MAE | gate passes (m)",
+                       "CNN rand MAE | gate passes (m)"],
+                      [[r["dataset"], r["n"], f"{100 * _f(r['gate_pass_rate']):.0f}%",
+                        f"{_f(r['gated_classical_mae_m']):.2f}", f"{_f(r['classical_mae_m']):.2f}",
+                        f"{_f(r['train_mean_mae_m']):.2f}",
+                        f"{_f(r['cnn_physics_gated_mae_m']):.2f}",
+                        f"{_f(r['cnn_random_gated_mae_m']):.2f}"] for r in g])
+    except Exception as exc:
+        out += [f"(E4 gated table unavailable: {exc})"]
+    return out
+
+
 def _sec_e3():
     import numpy as np
     rows = _read(os.path.join("E3", "e3_table.csv"))
@@ -147,25 +196,24 @@ def _sec_e3():
             methods.append(r["method"])
     snrs = sorted({_f(r["echo_snr_db"]) for r in rows})
     keep = [-15.0, 0.0, 25.0]
-    header = ["method"] + [f"RMSE@{k:g}dB" for k in keep] + ["mean (all 9 lvls)"]
-    out = ["## E3 delay RMSE vs echo SNR (samples; 95 % CI + failure rate in CSV)", ""]
-    out += ["Every row is evaluated at all 9 echo-SNR levels "
-            "(-15,-10,-5,0,5,10,15,20,25 dB); the mean covers those 9 levels.", ""]
+    header = ["method"] + [f"RMSE@{k:g}dB" for k in keep]
+    out = ["## E3 delay RMSE vs echo SNR (samples; all metrics + 95 % CI in CSV)", ""]
+    out += ["Every row is evaluated at all echo-SNR levels present in e3_table.csv; "
+            "main-table methods use the fair preprocessing, `(unpreprocessed)` rows are the "
+            "kept ablations of the previous table versions.", ""]
     body = []
     for m in methods:
         sub = [r for r in rows if r["method"] == m]
         vals = {}
         for r in sub:
             vals[_f(r["echo_snr_db"])] = _f(r["rmse_samples"])
-        finite = [v for v in vals.values() if np.isfinite(v)]
-        mean = f"{np.mean(finite):.3g}" if finite else "nan"
-        body.append([m] + [f"{vals.get(k, float('nan')):.3g}" for k in keep] + [mean])
+        body.append([m] + [f"{vals.get(k, float('nan')):.3g}" for k in keep])
     out += _table(header, body)
     try:
         cs = _read(os.path.join("E3", "e3_cycle_slips.csv"))
         out += ["", "+25 dB cycle-slip check (|err - k/f0| <= 0.15/f0, k != 0):"]
         cbody = []
-        for m in ("delay_xcorr (plain)", "delay_xcorr (masked)"):
+        for m in ("delay_xcorr (plain, unpreprocessed)", "delay_xcorr (masked, unpreprocessed)"):
             sub = [r for r in cs if r["method"] == m]
             near = sum(str(r["near_integer_period"]).lower() in ("true", "1") for r in sub)
             cbody.append([m, f"{near}/{len(sub)} ({100.0 * near / max(len(sub), 1):.0f}%); "
@@ -193,20 +241,26 @@ def _sec_e4():
     out += _table(["train_set", "test_set", "loc MAE (m)", "N models"], body)
     snr = _read(os.path.join("E4", "e4_snr_bins.csv"))
     out += ["", "test_id location MAE (m) by echo-SNR bin:"]
-    out += _table(["bin dB", "n", "CNN physics", "CNN random", "mean-pred", "E3 classical"], [
+    out += _table(["bin dB", "n", "CNN physics", "CNN random", "mean-pred", "E3 classical",
+                   "gate pass", "gated classical", "CNN phys | gate"], [
         [r["echo_snr_bin_db"], r["n"], f"{_f(r['cnn_physics_mae_m']):.2f}",
          f"{_f(r['cnn_random_mae_m']):.2f}", f"{_f(r['mean_pred_mae_m']):.2f}",
-         f"{_f(r['e3_classical_mae_m']):.2f}"] for r in snr])
+         f"{_f(r['e3_classical_mae_m']):.2f}",
+         f"{100 * _f(r.get('gate_pass_rate', 'nan')):.0f}%",
+         f"{_f(r.get('gated_classical_mae_m', 'nan')):.2f}",
+         f"{_f(r.get('cnn_physics_gated_mae_m', 'nan')):.2f}"] for r in snr])
     try:
         sf = _read(os.path.join("E4", "e4_shift_factors.csv"))
         out += ["", "single-factor shift decomposition (existing 3-seed models, n=1000/factor; "
                     "location MAE m):"]
         out += _table(["factor", "CNN physics", "CNN random", "mean-pred", "E3 classical",
-                       "cov50", "cov80", "cov90", "w80 (m)"], [
+                       "gated classical", "gate pass", "cov80", "w80 (m)"], [
             [r["factor"], f"{_f(r['cnn_physics_mae_m']):.2f}",
              f"{_f(r['cnn_random_mae_m']):.2f}", f"{_f(r['mean_pred_mae_m']):.2f}",
-             f"{_f(r['classical_mae_m']):.2f}", f"{_f(r['cov50']):.2f}",
-             f"{_f(r['cov80']):.2f}", f"{_f(r['cov90']):.2f}",
+             f"{_f(r['classical_mae_m']):.2f}",
+             f"{_f(r.get('gated_classical_mae_m', 'nan')):.2f}",
+             f"{100 * _f(r.get('gate_pass_rate', 'nan')):.0f}%",
+             f"{_f(r['cov80']):.2f}",
              f"{_f(r['mean_width80_m']):.2f}"] for r in sf])
     except Exception:
         pass
@@ -266,7 +320,7 @@ def build_summary(path=os.path.join(RESULTS, "SUMMARY.md"), max_lines=200):
         "",
     ]
     body = []
-    for fn in (_sec_e1, _sec_e2, _sec_e3, _sec_e4, _sec_e5, _sec_e6, _sec_e7):
+    for fn in (_sec_main, _sec_e1, _sec_e2, _sec_e3, _sec_e4, _sec_e5, _sec_e6, _sec_e7):
         try:
             body += fn()
         except Exception as exc:  # never fail the summary on one missing table

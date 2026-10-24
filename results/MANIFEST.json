@@ -1,7 +1,7 @@
 {
-  "git_commit": "d9bc04e095a51d09a290e094627c44d2f8e888fa",
+  "git_commit": "b5b6a2523ffe4ab51ba8764e57caf316e4ff4a38",
   "git_branch": "paper",
-  "generated_utc": "2026-10-22T19:09:29+00:00",
+  "generated_utc": "2026-10-24T11:07:30+00:00",
   "versions": {
     "python": "3.12.15",
     "platform": "Windows-10-10.0.19045-SP0",
@@ -15,16 +15,16 @@
     2
   ],
   "runtimes_s": {
-    "E1": 29.35,
-    "E2-stability": 15.88,
-    "E2-agreement": 1.48,
-    "E3": 69.41,
-    "E4": 317.64,
-    "E5": 25.61,
-    "E6": 0.31,
-    "E7": 23.79
+    "E1": 16.38,
+    "E2-stability": 6.41,
+    "E2-agreement": 0.56,
+    "E3": 46.2,
+    "E4": 239.0,
+    "E5": 25.28,
+    "E6": 0.41,
+    "E7": 21.96
   },
-  "runtime_total_s": 483.47,
+  "runtime_total_s": 356.2,
   "outputs": [
     {
       "path": "results/E1/e1_pipeline_rmse.pdf",
@@ -52,7 +52,7 @@
     },
     {
       "path": "results/E1/e1_speed_error.pdf",
-      "sha256": "b1c600fa4456757fb70dd167d5205982a10361d8222cfee50dcd36cdcb1b0046"
+      "sha256": "2dd7d6efb5ea82760dac9615e48e490c66b40bab4979321178d220f712345036"
     },
     {
       "path": "results/E1/e1_speed_error.png",
@@ -64,7 +64,7 @@
     },
     {
       "path": "results/E2/e2_agreement.pdf",
-      "sha256": "aca5a5e93837d9f9db5027846226177c0ca396b1aab2420ab5fdaafbefd24617"
+      "sha256": "798c9751df1dbe0fb5aac7d035e39b956612464e9ed0d831d8bfa2f9d7c9bdee"
     },
     {
       "path": "results/E2/e2_agreement.png",
@@ -76,11 +76,15 @@
     },
     {
       "path": "results/E3/e3_cycle_slips.csv",
-      "sha256": "65b17ea92589f3acabd3c5be36bf1da771956363c0dbaa4617b9fe8b299909c4"
+      "sha256": "20f5f676937a71adb1304aa6f2bf60e2be2b5cb6f4e86e1df5eaf2bfedb09d7d"
     },
     {
       "path": "results/E3/e3_full.csv",
       "sha256": "9904ff4d87ab3f418f4b4651be787d629962471503d59590b66798e04c388b1b"
+    },
+    {
+      "path": "results/E3/e3_main_table.csv",
+      "sha256": "a8ba7607cf994cd32eeef04e82d42d00238d7646505b51298393faa854858638"
     },
     {
       "path": "results/E3/e3_rmse_heatmap.pdf",
@@ -92,15 +96,15 @@
     },
     {
       "path": "results/E3/e3_rmse_vs_snr.pdf",
-      "sha256": "e129f6f10708c6afda11b1d2510240ff0e9b3a30cdc30905a05eb9db5414b59e"
+      "sha256": "4981e79620736e8747b37113197ca8c9cd11c106c11a7bceb366f19464744bd1"
     },
     {
       "path": "results/E3/e3_rmse_vs_snr.png",
-      "sha256": "944cebf19a3a01ae7641583adb86e5dfe3fed1cbc246368f1ef2ffa7934a980c"
+      "sha256": "63b72403a7e8a0f7134f146f571a4938484c674bebab590dd1977ab4860ebf3f"
     },
     {
       "path": "results/E3/e3_table.csv",
-      "sha256": "49981165d4a62a9cb5a3be0db41d040e6d8600178a80b9f90b1aff7d9a55284b"
+      "sha256": "cc032f4228ecbc22f7ec8e2d550f47ad9e95e986c83568da05352746150974f4"
     },
     {
       "path": "results/E3/e3_table_v1.csv",
@@ -112,7 +116,7 @@
     },
     {
       "path": "results/E4/e4_coverage.pdf",
-      "sha256": "69ec3ad6cbb4f9c8367ba8d46919edd4e08d3db0a8f67d5dca5c7dd58225fbc5"
+      "sha256": "9d2cf5be090bb2e0cd1fab8d8a5191454820e5819d093c83643cd591ddf62d18"
     },
     {
       "path": "results/E4/e4_coverage.png",
@@ -120,11 +124,19 @@
     },
     {
       "path": "results/E4/e4_diagnostics.csv",
-      "sha256": "2549bbec04025f525d40c1a8c472384cbc586651c271e9181baca01eb45412bd"
+      "sha256": "ef20881192dff133a1861a620ab33a5779b456637feb149850d3cadb1527a4c6"
+    },
+    {
+      "path": "results/E4/e4_gate_tuning.csv",
+      "sha256": "cd760c4b8ea7535ab18bdf7b3df0d91f0512f0db87ccae3d1b4f0f23be70a63f"
+    },
+    {
+      "path": "results/E4/e4_gated_classical.csv",
+      "sha256": "46c36ffac60fadedb892278df28651b806d1d61013d7d4c0d9f7c2ca327986c0"
     },
     {
       "path": "results/E4/e4_loss_curves.pdf",
-      "sha256": "82c6d5173bce9d93e2c57c7e3c73fa287f8897c2017ef2ca72e5d4605b1923c5"
+      "sha256": "899c6fb3d57a1a698f3fdfe6ac84290b614849abb2cd7b4a5aa5c95086d35977"
     },
     {
       "path": "results/E4/e4_loss_curves.png",
@@ -132,11 +144,11 @@
     },
     {
       "path": "results/E4/e4_manifest.json",
-      "sha256": "c28375e4172bc542915f36f97f5ccc3383ab2c8463e684b820af86695573b147"
+      "sha256": "fc37abcdca19598f7714f1950a71efe5486752e804b4fe1bee31f2d7093b0953"
     },
     {
       "path": "results/E4/e4_metrics.csv",
-      "sha256": "414bc0c4777beaa768b2b77b7ad5bf3538babb86314ea2b8984f8d7ce5e75b38"
+      "sha256": "0dea1377ee1e9145376bfb4a1938e630603c536575e7e9dd14d8d34c97fcce91"
     },
     {
       "path": "results/E4/e4_metrics_v1.csv",
@@ -152,7 +164,7 @@
     },
     {
       "path": "results/E4/e4_scatter.pdf",
-      "sha256": "2d7d2181ddda68afa6e107001bb63b8d5775cbe2e37f8b40d1ddbd13c00786f2"
+      "sha256": "3bd7817c9a66a16ddbea5fd971ed351fb4946859fc4845af86bc596ce1789631"
     },
     {
       "path": "results/E4/e4_scatter.png",
@@ -160,11 +172,11 @@
     },
     {
       "path": "results/E4/e4_shift_factors.csv",
-      "sha256": "3849e8603e8331a9763291691fdfb21e007ac195d61f30035bc116771916cd1a"
+      "sha256": "86d3716e77425b5c5f87b279b7555351f578ef4b9c8275048985953b1b1771ec"
     },
     {
       "path": "results/E4/e4_snr_bins.csv",
-      "sha256": "3fb864ad32d60fad49ff93d3437686db638b47dbbc646b181437f327bde7def4"
+      "sha256": "1183be5b931548d65acf7a53eaf08e9001079edfc9c7e610e4973ed77e743e07"
     },
     {
       "path": "results/E4/e4_summary.csv",
@@ -172,11 +184,11 @@
     },
     {
       "path": "results/E4/e4_train_times.csv",
-      "sha256": "71d6eec1132093d5671972ac9aa4d40e39b6dadcb790fc04ecede6bf131c282a"
+      "sha256": "5d56866cf6969cd061db714b3388f85329f6e59d44ab540d0c85b5cd932f3a87"
     },
     {
       "path": "results/E4/e4_tuning.csv",
-      "sha256": "890d4c2ca4f9b8310c540cf4bc76e95654846b5f0ffab0ea7261a164f6651a59"
+      "sha256": "063fd555f425a4d8afbd48ed5eb49667b92ba3a92341d70a5d086e6aab4f2e7d"
     },
     {
       "path": "results/E5/e5_class_stats.csv",
@@ -188,7 +200,7 @@
     },
     {
       "path": "results/E5/e5_robustness.pdf",
-      "sha256": "6a6830a4f3b602129d354fe5dd5e788d69aa490391993b7d36ecd8d8fea233ea"
+      "sha256": "48b4d944cf6e539ae890bd36b1ba342411fcc2f5c0a672905d0628160af4ba70"
     },
     {
       "path": "results/E5/e5_robustness.png",
@@ -204,7 +216,7 @@
     },
     {
       "path": "results/E7/e7_perf.csv",
-      "sha256": "604b711fcb5c63ec3e8dbd64bc2cda8917af32f70d6a1cc4d6d2f66d150a2a23"
+      "sha256": "ae8eac3a6fb45cbf3544773292a46e452f21885fefd44cff8d5f00e4fbe5dc2f"
     },
     {
       "path": "results/E7/e7_perf.json",

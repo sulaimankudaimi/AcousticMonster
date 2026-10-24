@@ -13,6 +13,15 @@ ONLY. Three seeds are trained for both the physics-target and random-target
 splits. v1 (no input normalisation) is kept as ``e4_metrics_v1.csv`` and both
 are reported.
 
+Gated classical baseline (``E3 classical + gate``): the E3 ``delay_pipeline``
+location estimate is kept only when a LABEL-FREE detection statistic passes a
+threshold; otherwise the training-mean location is emitted. The statistic is
+the peak-to-noise ratio (max/rms) of the reference-subtracted NLMS residual
+inside the common lag window [24, N-1-10]. The threshold is chosen on the
+VALIDATION split only (``data/synthetic/val.npz``), minimising gated location
+MAE. Reported: overall MAE on test_id/test_shift, per echo-SNR bin, per
+single-factor shift, and the CNN's MAE restricted to gate-passing samples.
+
 CIRCULARITY caveat: the physics-trained model is trained AND evaluated on
 physics-simulated data; ``test_id`` is in-distribution by construction.
 
@@ -34,8 +43,12 @@ from scipy.stats import norm
 import matplotlib.pyplot as plt
 
 from experiments import common
-from src.signal_core import delay_pipeline
-from src.synth.generator import FS, SHIFT, build_split, make_pulse
+from src.signal_core import (
+    denoise_wavelet,
+    nlms_filter,
+    speed_of_sound,
+)
+from src.synth.generator import FS, N, SHIFT, build_split, make_pulse
 from src.train_sovereign import SEEDS, load_split, predict_sovereign_dist, train_sovereign
 
 common.style()
@@ -46,6 +59,11 @@ OUT_DIR = os.path.join("results", "E4")
 TMP_DIR = os.path.join("results", "tmp")
 QUICK_EPOCHS = 2
 SKIP_E3 = 24  # unified E3 direct-pulse skip mask (E3 audit)
+EDGE_GUARD = 10          # E3 common trailing edge guard
+GATE_LO = SKIP_E3        # gate/peak window lower lag
+GATE_HI = N - 1 - EDGE_GUARD
+GATE_GRID = tuple(np.arange(1.0, 40.01, 0.25))  # PNR threshold search grid
+GATE_VAL_MAX = None      # run_all --quick subsamples the validation split
 SEED_RNG = 20240
 V1_CSV = os.path.join(OUT_DIR, "e4_metrics_v1.csv")
 SHIFT_N = 1000
@@ -102,19 +120,60 @@ def per_output_metrics(loc, scale, y):
     return rows, overall_nll
 
 
-def classical_predictions(X, meta):
-    """E3 full-pipeline classical estimator: predicted distance (m) per sample."""
-    preds = np.full(len(X), np.nan)
-    for i in range(len(X)):
+def classical_and_stat(X, meta):
+    """E3 ``delay_pipeline`` prediction + label-free gate statistic per sample.
+
+    Replicates ``delay_pipeline`` step-for-step (same denoiser on measurement
+    and reference, NLMS mu=0.01 order=1, parabolic peak in [SKIP_E3, N-1],
+    peak-to-peak reference alignment) so that both share one residual pass.
+    The gate statistic is the peak-to-noise ratio (max / rms) of the residual
+    inside the common lag window [GATE_LO, GATE_HI]; it never sees labels.
+    """
+    n = len(X)
+    preds = np.full(n, np.nan)
+    stats = np.full(n, np.nan)
+    for i in range(n):
         meas = X[i, :, 0].astype(np.float64)
         pulse = make_pulse(float(meta["f0"][i]))
         try:
-            res = delay_pipeline(meas, pulse, fs=FS, T=float(meta["T"][i]), P=float(meta["P"][i]),
-                                 mu=0.01, order=1, skip=SKIP_E3)
-            preds[i] = float(res.distance_m)
+            clean = denoise_wavelet(meas)
+            ref = denoise_wavelet(pulse)
+            echo = np.asarray(nlms_filter(ref, clean, mu=0.01, order=1), dtype=np.float64)
+            zone = np.abs(echo[SKIP_E3:])
+            peak_idx = SKIP_E3 + int(np.argmax(zone))
+            subsample = 0.0
+            if 0 < peak_idx < len(echo) - 1:
+                left, mid, right = abs(echo[peak_idx - 1]), abs(echo[peak_idx]), abs(echo[peak_idx + 1])
+                denom = left - 2.0 * mid + right
+                if abs(denom) > 1e-12:
+                    subsample = max(min(0.5 * (left - right) / denom, 0.5), -0.5)
+            reference_peak = int(np.argmax(np.abs(pulse)))
+            delay_s = (peak_idx + subsample) / FS - reference_peak / FS
+            c = speed_of_sound(float(meta["T"][i]), float(meta["P"][i]))
+            preds[i] = delay_s * c / 2.0
+            w = np.abs(echo[GATE_LO:GATE_HI + 1])
+            stats[i] = float(w.max() / (np.sqrt(np.mean(w ** 2)) + 1e-12))
         except Exception:
             pass
-    return preds
+    return preds, stats
+
+
+def gate_pass(preds, stats, thr):
+    return np.isfinite(preds) & np.isfinite(stats) & (stats >= thr)
+
+
+def fit_gate_threshold(preds, stats, true_m, fallback_m, grid=GATE_GRID):
+    """Pick the PNR threshold minimising gated location MAE (validation only)."""
+    rows = []
+    best = (np.inf, grid[0])
+    for thr in grid:
+        p = gate_pass(preds, stats, thr)
+        gated = np.where(p, np.nan_to_num(preds, nan=fallback_m), fallback_m)
+        mae = float(np.mean(np.abs(gated - true_m)))
+        rows.append({"threshold": float(thr), "pass_rate": float(p.mean()), "val_mae_m": mae})
+        if mae < best[0]:
+            best = (mae, float(thr))
+    return best[1], rows
 
 
 def mean_predictor_metrics(train_Y, y):
@@ -123,36 +182,47 @@ def mean_predictor_metrics(train_Y, y):
     return per_output_metrics(loc, scale, y), loc
 
 
-def shift_decomposition(models, env_mean, env_std, train_y, seeds, out_dir=OUT_DIR):
+def shift_decomposition(models, env_mean, env_std, train_y, seeds, out_dir=OUT_DIR,
+                        gate_thr=None, fallback_m=None):
     """Evaluate the ALREADY-TRAINED v2 models on single-factor shift sets.
 
     No retraining: the models live in memory from the main E4 loop. Each set
     changes exactly one factor of the distribution-shift split (T/P, SNR,
-    noise type, f0, attenuation) while all other ranges stay at BASE.
+    noise type, f0, attenuation) while all other ranges stay at BASE. The
+    gated classical baseline reuses the validation-tuned PNR threshold.
     """
     os.makedirs(out_dir, exist_ok=True)
     target = ("physics-target", "random-target")
     rows = []
     mp_loc = np.tile(train_y.mean(axis=0), (SHIFT_N, 1))
+    if fallback_m is None:
+        fallback_m = float(train_y[:, 1].mean() * 60.0)
     for fi, (label, ranges, impulsive) in enumerate(SHIFT_FACTORS):
         d = build_split("shift_factor_%d" % fi, SHIFT_N, SHIFT_SEED + fi,
                         shift=False, ranges=ranges, impulsive=impulsive)
         X, E, y = d["X"], d["env"], d["y"]
         true_m = y[:, 1] * 60.0
         meta = {k: d[k] for k in ("T", "P", "f0")}
-        preds = classical_predictions(X, meta)
+        preds, stats = classical_and_stat(X, meta)
         c_mae = float(np.nanmean(np.abs(preds - true_m)))
         c_fail = float(np.mean(~np.isfinite(preds)))
+        pass_ = gate_pass(preds, stats, gate_thr)
+        gated = np.where(pass_, np.nan_to_num(preds, nan=fallback_m), fallback_m)
+        g_mae = float(np.mean(np.abs(gated - true_m)))
         mp_mae = float(np.mean(np.abs(mp_loc[:, 1] * 60.0 - true_m)))
         Xn = rms_normalise(X)
         En = apply_env_stats(E, env_mean, env_std)
         per_tt = {tt: [] for tt in target}
+        per_tt_gated = {tt: [] for tt in target}
         cov = {p: [] for p in REPORT_LEVELS}
         wid = {p: [] for p in REPORT_LEVELS}
         for seed in seeds:
             for tt in target:
                 loc, scale = predict_sovereign_dist(models[(seed, tt)], Xn, En)
                 per_tt[tt].append(float(np.mean(np.abs(loc[:, 1] * 60.0 - true_m))))
+                if np.any(pass_):
+                    per_tt_gated[tt].append(
+                        float(np.mean(np.abs(loc[pass_, 1] * 60.0 - true_m[pass_]))))
                 if tt == "physics-target":
                     for p in REPORT_LEVELS:
                         cov[p].append(float(np.mean(np.abs(y[:, 1] - loc[:, 1]) <= _z(p) * scale[:, 1])))
@@ -164,17 +234,24 @@ def shift_decomposition(models, env_mean, env_std, train_y, seeds, out_dir=OUT_D
             "mean_pred_mae_m": mp_mae,
             "classical_mae_m": c_mae,
             "classical_failure_rate": c_fail,
+            "gate_threshold": gate_thr,
+            "gate_pass_rate": float(pass_.mean()),
+            "gated_classical_mae_m": g_mae,
+            "cnn_physics_gated_mae_m": (float(np.mean(per_tt_gated["physics-target"]))
+                                        if per_tt_gated["physics-target"] else float("nan")),
             "cov50": float(np.mean(cov[0.5])), "cov80": float(np.mean(cov[0.8])),
             "cov90": float(np.mean(cov[0.9])),
             "mean_width80_m": float(np.mean(wid[0.8])),
         }
         rows.append(row)
-        print("  shift %-18s phys=%.2f rand=%.2f mp=%.2f classical=%.2f "
-              "cov80=%.2f width80=%.2f" % (label, row["cnn_physics_mae_m"],
-                                           row["cnn_random_mae_m"], mp_mae, c_mae,
-                                           row["cov80"], row["mean_width80_m"]), flush=True)
+        print("  shift %-18s phys=%.2f rand=%.2f mp=%.2f classical=%.2f gated=%.2f "
+              "(pass %.0f%%) cov80=%.2f width80=%.2f" % (label, row["cnn_physics_mae_m"],
+                                                        row["cnn_random_mae_m"], mp_mae, c_mae,
+                                                        g_mae, 100.0 * row["gate_pass_rate"],
+                                                        row["cov80"], row["mean_width80_m"]), flush=True)
     hdr = ["factor", "n", "cnn_physics_mae_m", "cnn_random_mae_m", "mean_pred_mae_m",
-           "classical_mae_m", "classical_failure_rate", "cov50", "cov80", "cov90",
+           "classical_mae_m", "classical_failure_rate", "gate_threshold", "gate_pass_rate",
+           "gated_classical_mae_m", "cnn_physics_gated_mae_m", "cov50", "cov80", "cov90",
            "mean_width80_m"]
     common.save_csv(os.path.join(out_dir, "e4_shift_factors.csv"), rows, hdr)
     return rows
@@ -215,6 +292,20 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
     # env statistics from TRAIN only
     env_mean, env_std = fit_env_stats(train[1])
 
+    # ---- gate threshold: label-free PNR statistic, tuned on VALIDATION only ----
+    train_mean_m = float(trainY[:, 1].mean() * 60.0)
+    with np.load(os.path.join("data", "synthetic", "val.npz")) as vz:
+        Xv = vz["X"]
+        metav = {k: vz[k] for k in ("T", "P", "f0")}
+        truev = vz["x_b"].astype(np.float64)
+    nv = len(Xv) if GATE_VAL_MAX is None else min(GATE_VAL_MAX, len(Xv))
+    vpred, vstat = classical_and_stat(Xv[:nv], {k: v[:nv] for k, v in metav.items()})
+    gate_thr, gate_tune_rows = fit_gate_threshold(vpred, vstat, truev[:nv], train_mean_m)
+    print(f"gate: PNR threshold {gate_thr:g} (validation split, n={nv}, train-mean "
+          f"fallback {train_mean_m:.2f} m)", flush=True)
+    common.save_csv(os.path.join(OUT_DIR, "e4_gate_tuning.csv"), gate_tune_rows,
+                    ["threshold", "pass_rate", "val_mae_m"])
+
     if tune:
         print("hyper-parameter search on validation only (seed 0):")
         hp, tune_records = tune_hyperparams(train, trainY)
@@ -224,8 +315,8 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
         hp = {"lr": None, "epochs": epochs or 30, "val_loss": None}
     print(f"chosen hyper-parameters: lr={hp['lr']} epochs_cap={hp['epochs']}")
 
-    # ---- mean-predictor + classical baselines (independent of seed/model) ----
-    rows, class_rows = [], []
+    # ---- mean-predictor + classical / gated-classical baselines ----
+    rows, class_rows, gate_overall = [], [], []
     mp_loc = {}
     for tag, (X, E, y) in tests.items():
         (mp, nll), loc = mean_predictor_metrics(trainY, y)
@@ -234,11 +325,24 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
             m.update({"model": "mean-predictor", "target_type": "-", "seed": "-",
                       "dataset": tag, "overall_nll": nll})
             rows.append(m)
-        preds = classical_predictions(X, meta[tag])
-        err = np.abs(preds - meta[tag]["x_b"])
+        preds, stats = classical_and_stat(X, meta[tag])
+        true_m = meta[tag]["x_b"].astype(np.float64)
+        err = np.abs(preds - true_m)
+        pass_ = gate_pass(preds, stats, gate_thr)
+        gated = np.where(pass_, np.nan_to_num(preds, nan=train_mean_m), train_mean_m)
         class_rows.append({"dataset": tag, "location_mae_m": float(np.nanmean(err)),
                            "failure_rate": float(np.mean(~np.isfinite(preds)))})
+        gate_overall.append({
+            "dataset": tag, "n": len(X), "gate_threshold": gate_thr,
+            "train_mean_m": train_mean_m,
+            "gate_pass_rate": float(pass_.mean()),
+            "gated_classical_mae_m": float(np.mean(np.abs(gated - true_m))),
+            "classical_mae_m": float(np.nanmean(err)),
+            "train_mean_mae_m": float(np.mean(np.abs(train_mean_m - true_m))),
+            "cnn_physics_gated_mae_m": "", "cnn_random_gated_mae_m": "",
+        })
         np.save(os.path.join(TMP_DIR, f"classical_{tag}.npy"), preds)
+        np.save(os.path.join(TMP_DIR, f"gate_pass_{tag}.npy"), pass_)
 
     # ---- NN runs ----
     train_times, diag_rows, outside_rows = [], [], []
@@ -289,29 +393,49 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
                                          "frac_outside_0_1": frac,
                                          "loc_min": float(loc[:, d].min()), "loc_max": float(loc[:, d].max())})
 
+    # ---- CNN MAE restricted to gate-passing samples (overall) ----
+    cnn_avg = {(tt, tag): np.mean([loc_store[(s, tt, tag)][:, 1] * 60.0 for s in seeds], axis=0)
+               for tt in ("random-target", "physics-target") for tag in tests}
+    for go in gate_overall:
+        tag = go["dataset"]
+        pass_ = np.load(os.path.join(TMP_DIR, f"gate_pass_{tag}.npy"))
+        true_m = meta[tag]["x_b"].astype(np.float64)
+        if np.any(pass_):
+            go["cnn_physics_gated_mae_m"] = float(np.mean(np.abs(
+                cnn_avg[("physics-target", tag)][pass_] - true_m[pass_])))
+            go["cnn_random_gated_mae_m"] = float(np.mean(np.abs(
+                cnn_avg[("random-target", tag)][pass_] - true_m[pass_])))
+
     # ---- single-factor shift decomposition (no retraining) ----
     if shift_decomp:
         print("single-factor shift decomposition (existing models, n=%d/factor):" % SHIFT_N, flush=True)
-        shift_decomposition(models_store, env_mean, env_std, trainY, seeds, OUT_DIR)
+        shift_decomposition(models_store, env_mean, env_std, trainY, seeds, OUT_DIR,
+                            gate_thr=gate_thr, fallback_m=train_mean_m)
 
     # ---- SNR-bin table (test_id) ----
     snr_bins = [(-np.inf, -10.0), (-10.0, 0.0), (0.0, 10.0), (10.0, np.inf)]
     esnr = meta["test_id"]["echo_snr_db"]
     true_xb = meta["test_id"]["x_b"]
     bin_rows = []
-    cnn_loc = {tt: np.mean([loc_store[(s, tt, "test_id")][:, 1] * 60.0 for s in seeds], axis=0)
-               for tt in ("random-target", "physics-target")}
+    cnn_loc = {tt: cnn_avg[(tt, "test_id")] for tt in ("random-target", "physics-target")}
     classical = np.load(os.path.join(TMP_DIR, "classical_test_id.npy"))
+    pass_id = np.load(os.path.join(TMP_DIR, "gate_pass_test_id.npy"))
+    gated_id = np.where(pass_id, np.nan_to_num(classical, nan=train_mean_m), train_mean_m)
     mpl = mp_loc["test_id"][:, 1] * 60.0
     for lo, hi in snr_bins:
         m = (esnr >= lo) & (esnr < hi) if np.isfinite(hi) else (esnr >= lo)
         label = f"({lo:g},{hi:g})" if np.isfinite(hi) else f"({lo:g},{hi:g})"
+        mb = m & pass_id
         bin_rows.append({
             "echo_snr_bin_db": label, "n": int(m.sum()),
             "cnn_physics_mae_m": float(np.mean(np.abs(cnn_loc["physics-target"][m] - true_xb[m]))),
             "cnn_random_mae_m": float(np.mean(np.abs(cnn_loc["random-target"][m] - true_xb[m]))),
             "mean_pred_mae_m": float(np.mean(np.abs(mpl[m] - true_xb[m]))),
             "e3_classical_mae_m": float(np.nanmean(np.abs(classical[m] - true_xb[m]))),
+            "gate_pass_rate": float(pass_id[m].mean()),
+            "gated_classical_mae_m": float(np.mean(np.abs(gated_id[m] - true_xb[m]))),
+            "cnn_physics_gated_mae_m": (float(np.mean(np.abs(
+                cnn_loc["physics-target"][mb] - true_xb[mb]))) if np.any(mb) else float("nan")),
         })
 
     # ---- save v2 outputs ----
@@ -320,6 +444,10 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
     common.save_csv(os.path.join(OUT_DIR, "e4_per_output.csv"), rows, per_hdr)
     common.save_csv(os.path.join(OUT_DIR, "e4_classical.csv"), class_rows,
                     ["dataset", "location_mae_m", "failure_rate"])
+    common.save_csv(os.path.join(OUT_DIR, "e4_gated_classical.csv"), gate_overall,
+                    ["dataset", "n", "gate_threshold", "train_mean_m", "gate_pass_rate",
+                     "gated_classical_mae_m", "classical_mae_m", "train_mean_mae_m",
+                     "cnn_physics_gated_mae_m", "cnn_random_gated_mae_m"])
     common.save_csv(os.path.join(OUT_DIR, "e4_train_times.csv"), train_times,
                     ["seed", "target_type", "epochs_used", "training_time_s", "best_val_loss"])
     common.save_csv(os.path.join(OUT_DIR, "e4_diagnostics.csv"), diag_rows,
@@ -328,7 +456,8 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
                     ["model", "seed", "dataset", "output", "frac_outside_0_1", "loc_min", "loc_max"])
     common.save_csv(os.path.join(OUT_DIR, "e4_snr_bins.csv"), bin_rows,
                     ["echo_snr_bin_db", "n", "cnn_physics_mae_m", "cnn_random_mae_m",
-                     "mean_pred_mae_m", "e3_classical_mae_m"])
+                     "mean_pred_mae_m", "e3_classical_mae_m", "gate_pass_rate",
+                     "gated_classical_mae_m", "cnn_physics_gated_mae_m"])
     common.save_json(os.path.join(OUT_DIR, "e4_manifest.json"),
                      {"variant": "per-sample RMS + train-std env", "epochs_cap": hp["epochs"],
                       "lr": hp["lr"], "patience": 5, "batch": 64, "seeds": list(seeds),
@@ -337,6 +466,13 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
                       "shift_decomposition": {"n_per_factor": SHIFT_N, "seed": SHIFT_SEED,
                                               "factors": [f[0] for f in SHIFT_FACTORS],
                                               "retrained": False},
+                      "gate": {"statistic": "peak-to-noise ratio max(|r|)/rms(|r|) of the "
+                                            "reference-subtracted NLMS residual in lag window "
+                                            "[%d, %d]" % (GATE_LO, GATE_HI),
+                               "threshold": gate_thr, "tuned_on": "data/synthetic/val.npz",
+                               "val_n": nv, "objective": "gated location MAE on validation",
+                               "fallback_m": train_mean_m,
+                               "tuning_curve": "e4_gate_tuning.csv"},
                       "e3_skip_mask": SKIP_E3,
                       "v1_table": os.path.basename(V1_CSV),
                       "version": common.versions()})
@@ -361,6 +497,11 @@ def run(epochs=None, seeds=None, tune=True, shift_decomp=True):
                         "test_set": cr["dataset"], "seed": "", "output": "location",
                         "mae_m": round(cr["location_mae_m"], 6), "nll": "", "cov50": "", "cov80": "",
                         "cov90": "", "mean_width": "", "train_time_s": ""})
+    for go in gate_overall:
+        metrics.append({"variant": "per-sample RMS + train-std env", "train_set": "E3 classical + gate",
+                        "test_set": go["dataset"], "seed": "", "output": "location",
+                        "mae_m": round(go["gated_classical_mae_m"], 6), "nll": "", "cov50": "",
+                        "cov80": "", "cov90": "", "mean_width": "", "train_time_s": ""})
     mhdr = ["variant", "train_set", "test_set", "seed", "output", "mae_m", "nll",
             "cov50", "cov80", "cov90", "mean_width", "train_time_s"]
     common.save_csv(os.path.join(OUT_DIR, "e4_metrics.csv"), metrics, mhdr)

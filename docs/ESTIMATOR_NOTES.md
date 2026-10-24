@@ -37,6 +37,22 @@
    amplitude cannot make it diverge; only the amplitude of the reference
    (the filter input `x`) can. Mitigation is on the reference side, e.g.
    normalizing the reference gain.
+6. **Fair preprocessing (demean both signals) exposes a plain-LMS tail
+   pedestal.** Demeaning the measurement leaves a constant `-mean(meas)`
+   pedestal (~1 % of scale, the pulse's non-zero mean) in the denoised tail.
+   NLMS cancels it (the demeaned reference tail is the same constant, hence
+   predictable), but the plain scalar LMS either freezes `w` (raw reference
+   tail = 0) or random-walks it (demeaned reference tail), so weak echoes
+   (energy < ~|mean(pulse)|) lose to the pedestal: ~3 % |err| > 5 failures at
+   +25 dB in the E3 fair main table, versus 0 % for the NLMS variants. Kept
+   as an honest property of the legacy path under uniform preprocessing.
+   The same pedestal also costs the fair NLMS `delay_pipeline` ~2 % failures
+   at 0 dB (0 % unprocessed): with `-mean(meas)` on both tails the scalar
+   NLMS weight converges to `mean(meas)/mean(ref)` >> echo scale, and its
+   transient at the window start (picks at lag 26-27, residual ~ mean(meas))
+   outranks weak echoes (energy 0.012-0.035). Diagnosed cell-by-cell
+   (`results/tmp` probe); inherent to demeaning + order-1 NLMS, not a coding
+   bug, so kept under the mandated uniform preprocessing.
 
 ## Why E3 `delay_pipeline` at 0 dB went 16.04 -> 0.742 samples
 - Pre-audit it searched the whole residual for the amplitude peak, so the
@@ -46,3 +62,14 @@
   with the same wavelet operator, and scored echo-peak minus reference-peak;
   the echo then wins, so RMSE at 0 dB is 0.742 samples.
 - Not a metric change: same true delay, same seeds, same 300 cells.
+
+## Why parabolic interpolation loses to the integer peak at +25 dB (0.35 vs 0.30 samples)
+- The generator renders the echo with `np.roll(pulse, round(delay_samp))`, so the
+  measurement carries only an INTEGER shift; the true sub-sample offset is
+  irrecoverable (not a reference-peak convention bug, not an estimator flaw).
+- Probe (n=300 @ +25 dB): integer-peak error == rendering rounding `round(d)-d`
+  exactly in 299/300 samples, RMSE 0.305 ~ uniform bound 1/sqrt(12) = 0.289;
+  parabolic `frac` is uncorrelated with the lost offset (corr ~ 0.00) and, fitted
+  on the rectified |NLMS residual|, measures carrier phase instead: bias -0.19
+  samples + jitter (std 0.12) give RMSE 0.365 ~ rmse(rounding + frac). Both sit
+  at the rendering rounding floor; their high-SNR ranking should not be over-read.
